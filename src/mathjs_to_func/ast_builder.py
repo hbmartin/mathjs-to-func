@@ -9,11 +9,11 @@ from typing import Any, Iterable, Mapping
 
 from .errors import InvalidNodeError
 
-_VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def _require_identifier(name: str, *, expression: str | None) -> str:
-    if not _VALID_IDENTIFIER.match(name):
+def ensure_identifier(name: str, *, expression: str | None) -> str:
+    if not IDENTIFIER_PATTERN.match(name):
         raise InvalidNodeError(
             f"Unsupported identifier name: {name!r}",
             expression=expression,
@@ -112,7 +112,7 @@ class MathJsAstBuilder:
                 expression=self.expression_name,
                 node=node,
             )
-        safe_name = _require_identifier(name, expression=self.expression_name)
+        safe_name = ensure_identifier(name, expression=self.expression_name)
         return ast.Name(id=safe_name, ctx=ast.Load())
 
     def _handle_ParenthesisNode(self, node: Mapping[str, Any]) -> ast.expr:
@@ -246,3 +246,25 @@ class MathJsAstBuilder:
             args=call_args,
             keywords=[],
         )
+
+    def _handle_ArrayNode(self, node: Mapping[str, Any]) -> ast.expr:
+        items = node.get("items")
+        if not isinstance(items, Iterable):
+            raise InvalidNodeError(
+                "ArrayNode items must be iterable",
+                expression=self.expression_name,
+                node=node,
+            )
+        elts: list[ast.expr] = []
+        for item in items:
+            if not isinstance(item, Mapping):
+                raise InvalidNodeError(
+                    "ArrayNode element must be object",
+                    expression=self.expression_name,
+                    node=node,
+                )
+            elts.append(self.build(item))
+        return ast.List(elts=elts, ctx=ast.Load())
+
+
+__all__ = ["MathJsAstBuilder", "ensure_identifier", "IDENTIFIER_PATTERN"]

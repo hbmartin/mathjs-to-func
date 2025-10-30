@@ -100,3 +100,20 @@ def _mj_ifnull(value: object, fallback: object) -> object:
     if isinstance(value, int):
         return value
     return value
+
+
+HELPER_FUNCTIONS = {
+    "_mj_min": _mj_min,
+    "_mj_max": _mj_max,
+    "_mj_sum": _mj_sum,
+    "_mj_ifnull": _mj_ifnull,
+}
+
+__all__ = [
+    "HELPER_NAME_MAP",
+    "HELPER_FUNCTIONS",
+    "_mj_min",
+    "_mj_max",
+    "_mj_sum",
+    "_mj_ifnull",
+]
