@@ -137,9 +137,7 @@ def _build_function_ast(
         )
     )
 
-    required_set = ast.Set(
-        elts=[ast.Constant(value=name) for name in required_inputs]
-    )
+    required_set = ast.Set(elts=[ast.Constant(value=name) for name in required_inputs])
     scope_key_call = ast.Call(
         func=ast.Name(id="set", ctx=ast.Load()),
         args=[
@@ -203,9 +201,7 @@ def _build_function_ast(
         )
     )
 
-    allowed_set = ast.Set(
-        elts=[ast.Constant(value=name) for name in allowed_inputs]
-    )
+    allowed_set = ast.Set(elts=[ast.Constant(value=name) for name in allowed_inputs])
     body.append(
         ast.Assign(
             targets=[ast.Name(id="_extra", ctx=ast.Store())],

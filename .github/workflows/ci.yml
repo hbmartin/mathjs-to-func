@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
   pull_request:
-    branches: [ master ]
   workflow_dispatch:
 
 jobs:
@@ -23,8 +21,10 @@ jobs:
       - name: Check code formatting with ruff
         run: uv run ruff check
 
-      - name: Type check with mypy
-        run: uv run mypy
+      - name: Type check with ty
+        run: uv run ty check src
 
       - name: Check code formatting with black
-        run: uv run black --check --diff .
+        run: uv run black --check --diff src
+
+      - run: uv run pytest

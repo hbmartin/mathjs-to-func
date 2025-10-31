@@ -1,8 +1,9 @@
 [project]
 name = "mathjs-to-func"
 version = "0.1.0"
-description = "Add your description here"
+description = "Compile serialized math.js expression trees into fast, reusable Python callables."
 readme = "README.md"
+license = { file = "LICENSE" }
 authors = [
     { name = "Harold Martin", email = "harold.martin@gmail.com" }
 ]
@@ -10,6 +11,28 @@ requires-python = ">=3.14"
 dependencies = [
     "numpy>=2.3.4",
 ]
+keywords = [
+    "mathjs",
+    "compiler",
+    "ast",
+    "formulas",
+    "numpy",
+]
+classifiers = [
+    "Development Status :: 3 :: Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/hbmartin/mathjs-to-func"
+"Bug Reports" = "https://github.com/hbmartin/mathjs-to-func/issues"
+"Source" = "https://github.com/hbmartin/mathjs-to-func"
 
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
@@ -20,4 +43,24 @@ dev = [
     "black>=25.9.0",
     "pytest>=8.4.2",
     "ruff>=0.14.2",
+    "ty>=0.0.1a25",
 ]
+
+[tool.ruff]
+# Exclude a variety of commonly ignored directories.
+exclude = [".bzr", ".direnv", ".eggs", ".git", ".git-rewrite", ".hg", ".ipynb_checkpoints", ".mypy_cache", ".nox", ".pants.d", ".pyenv", ".pytest_cache", ".pytype", ".ruff_cache", ".svn", ".tox", ".venv", ".vscode", "__pypackages__", "_build", "buck-out", "build", "dist", "node_modules", "setup.py", "site-packages", "venv"]
+
+# Same as Black.
+line-length = 88
+indent-width = 4
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+[tool.ruff.format]
+# Same as Black.
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

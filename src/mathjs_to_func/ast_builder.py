@@ -6,7 +6,7 @@ import ast
 import math
 import re
 from collections.abc import Iterable as AbcIterable, Mapping as AbcMapping
-from typing import Any, Iterable, Mapping, TypeVar, Generic
+from typing import Any, Mapping, TypeVar, Generic
 
 from .errors import InvalidNodeError
 
