@@ -86,9 +86,7 @@ def _dependency_closure(
         if current in needed:
             continue
         needed.add(current)
-        stack.extend(
-            dep for dep in dependency_map[current] if dep in expression_names
-        )
+        stack.extend(dep for dep in dependency_map[current] if dep in expression_names)
     return needed
 
 

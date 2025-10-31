@@ -358,6 +358,8 @@ def test_invalid_symbol_name():
     expressions = {"res": op("add", symbol("valid"), symbol("__bad name__"))}
     with pytest.raises(InvalidNodeError):
         build_evaluator(expressions=expressions, inputs=["valid"], target="res")
+
+
 def test_expression_conflicts_with_input():
     expressions = {"x": const(5), "res": op("add", symbol("x"), const(1))}
     with pytest.raises(ExpressionError):
@@ -420,7 +422,9 @@ def test_nested_functions_and_arrays():
             const(3),
         ),
     }
-    evaluator = build_evaluator(expressions=expressions, inputs=["x", "y"], target="avg")
+    evaluator = build_evaluator(
+        expressions=expressions, inputs=["x", "y"], target="avg"
+    )
     assert evaluator({"x": 4, "y": 1}) == pytest.approx(7 / 3)
 
 
@@ -636,7 +640,9 @@ def test_dependency_graph_ignores_unused_inputs():
 
 def test_payload_and_direct_args_conflict():
     payload = {"expressions": {"res": const(1)}, "inputs": [], "target": "res"}
-    evaluator = build_evaluator(expressions=payload["expressions"], inputs=[], target="res")
+    evaluator = build_evaluator(
+        expressions=payload["expressions"], inputs=[], target="res"
+    )
     assert evaluator({}) == 1
 
 

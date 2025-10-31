@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
 from functools import reduce
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
 
 HELPER_NAME_MAP = {
     "min": "_mj_min",

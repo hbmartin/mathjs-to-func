@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Iterable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping
 
 from .compiler import CompilationResult, compile_to_callable
 from .errors import (
@@ -46,7 +48,8 @@ def _extract_payload(
         except KeyError as exc:
             missing = exc.args[0]
             raise ExpressionError(
-                f"Payload missing required key: {missing}", expression=None,
+                f"Payload missing required key: {missing}",
+                expression=None,
             ) from exc
     if expressions is None or inputs is None or target is None:
         raise ExpressionError("Expressions, inputs, and target are required")
