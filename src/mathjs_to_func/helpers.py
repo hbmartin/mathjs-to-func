@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import Iterable, Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
 
 HELPER_NAME_MAP = {
     "min": "_mj_min",
@@ -30,7 +33,10 @@ def _maybe_scalar(value: object) -> object:
     return value
 
 
-def _elementwise_reduce(func, values: Iterable[object]) -> object:
+def _elementwise_reduce(
+    func: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    values: Iterable[object],
+) -> object:
     iterator = iter(values)
     try:
         first = next(iterator)
@@ -148,10 +154,10 @@ HELPER_FUNCTIONS = {
 }
 
 __all__ = [
-    "HELPER_NAME_MAP",
     "HELPER_FUNCTIONS",
-    "_mj_min",
-    "_mj_max",
-    "_mj_sum",
+    "HELPER_NAME_MAP",
     "_mj_ifnull",
+    "_mj_max",
+    "_mj_min",
+    "_mj_sum",
 ]
