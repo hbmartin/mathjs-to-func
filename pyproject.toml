@@ -1,16 +1,17 @@
 [project]
 name = "mathjs-to-func"
-version = "0.1.0"
+version = "0.2.0"
 description = "Compile serialized math.js expression trees into fast, reusable Python callables."
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [
     { name = "Harold Martin", email = "harold.martin@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.3.4",
 ]
+
 keywords = [
     "mathjs",
     "compiler",
@@ -19,14 +20,15 @@ keywords = [
     "numpy",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Software Development :: Compilers",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -38,6 +40,11 @@ classifiers = [
 "Bug Reports" = "https://github.com/hbmartin/mathjs-to-func/issues"
 "Source" = "https://github.com/hbmartin/mathjs-to-func"
 
+[project.optional-dependencies]
+parse = [
+    "pydantic>=2.9.2,<3",
+]
+
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
 build-backend = "uv_build"
@@ -45,6 +52,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "black>=25.9.0",
+    "pydantic>=2.9.2,<3",
     "pytest>=8.4.2",
     "ruff>=0.14.2",
     "ty>=0.0.1a25",
@@ -57,7 +65,7 @@ exclude = [".bzr", ".direnv", ".eggs", ".git", ".git-rewrite", ".hg", ".ipynb_ch
 # Same as Black.
 line-length = 88
 indent-width = 4
-target-version = "py313"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -66,7 +74,8 @@ ignore = ["ANN204", "D107", "D203", "D213", "EM101", "EM102", "PLR0911", "PLR200
 [tool.ruff.lint.per-file-ignores]
 "src/mathjs_to_func/ast_builder.py" = ["ANN401", "ARG002", "D102", "N802"]
 "src/mathjs_to_func/compiler.py" = ["S102"]
-"tests/*.py" = ["ANN001", "ANN002", "ANN201", "D100", "D102", "D103", "D400", "D415", "E501", "F401", "FBT003", "INP001", "PLC0415", "PLR0913", "PLR2004", "PT006", "PT009", "PT027", "S101", "SIM115", "TRY003"]
+"src/mathjs_to_func/parse.py" = ["N815"]
+"tests/*.py" = ["ANN001", "ANN002", "ANN201", "D100", "D102", "D103", "D400", "D415", "E501", "F401", "FBT003", "INP001", "PLC0415", "PLR0913", "PLR2004", "PT011", "PT006", "PT009", "PT027", "S101", "SIM115", "TRY003"]
 
 [tool.ruff.format]
 # Same as Black.

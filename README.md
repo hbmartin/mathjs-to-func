@@ -5,6 +5,7 @@
 [![Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
 [![ty](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ty/main/assets/badge/v0.json)](https://github.com/astral-sh/ty)
 [![CI](https://github.com/hbmartin/mathjs-to-func/actions/workflows/ci.yml/badge.svg)](https://github.com/hbmartin/mathjs-to-func/actions/workflows/ci.yml)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hbmartin/mathjs-to-func)
 
 A tiny Python library that compiles serialized [math.js](https://mathjs.org/) expression trees into fast, reusable Python callables. The generated function respects dependency ordering, validates inputs, and mirrors a subset of math.js operators (`+`, `-`, `*`, `/`, `^`, `%`, unary plus/minus) and functions (`min`, `max`, `sum`, `ifnull`).
 
@@ -20,6 +21,36 @@ The project uses [uv](https://github.com/astral-sh/uv) for dependency and virtua
 
 ```bash
 uv sync  # create the virtual environment declared in uv.lock
+```
+
+An optional `parse` extra installs a JSON-to-math.js parser powered by Pydantic:
+
+```bash
+uv sync --extra parse
+```
+
+### Parsing math.js JSON
+
+With the extra installed you can turn serialized math.js nodes into evaluator-ready mappings:
+
+```python
+from mathjs_to_func import build_evaluator
+from mathjs_to_func.parse import parse
+
+expression = parse(
+    '{"type": "OperatorNode", "fn": "add", "args": [\n'
+    '    {"type": "SymbolNode", "name": "x"},\n'
+    '    {"type": "ConstantNode", "value": "2", "valueType": "number"}\n'
+    ']}'
+)
+
+evaluator = build_evaluator(
+    expressions={"total": expression},
+    inputs=["x"],
+    target="total",
+)
+
+result = evaluator({"x": 40})  # -> 42
 ```
 
 All examples below assume commands are wrapped with `uv run ...` to execute inside the managed environment.
