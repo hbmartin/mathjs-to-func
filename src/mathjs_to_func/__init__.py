@@ -34,6 +34,11 @@ def _extract_payload(
     payload: Mapping[str, Any] | None,
 ) -> tuple[Mapping[str, Any], Iterable[str], str]:
     if payload is not None:
+        if expressions is not None or inputs is not None or target is not None:
+            raise ExpressionError(
+                "payload cannot be combined with direct arguments",
+                expression=None,
+            )
         try:
             expressions = payload["expressions"]
             inputs = payload["inputs"]
