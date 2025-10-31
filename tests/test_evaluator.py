@@ -256,17 +256,16 @@ def test_ifnull_behavior(value, fallback, expected):
             "arr_alt": np.array([5, 3]),
             "nan_val": float("nan"),
             "none_val": None,
-        }
+        },
     )
     evaluator = build_evaluator(expressions=expr, inputs=inputs, target="result")
     result = evaluator({k: scope[k] for k in inputs})
     if isinstance(expected, np.ndarray):
         np.testing.assert_allclose(result, expected)
+    elif isinstance(expected, float) and math.isnan(expected):
+        assert math.isnan(result)
     else:
-        if isinstance(expected, float) and math.isnan(expected):
-            assert math.isnan(result)
-        else:
-            assert result == expected
+        assert result == expected
 
 
 @pytest.mark.parametrize("length", list(range(1, 21)))
@@ -399,7 +398,7 @@ def test_mathjs_field_support():
                 {"mathjs": "ConstantNode", "value": "2", "valueType": "number"},
                 {"mathjs": "ConstantNode", "value": "3", "valueType": "number"},
             ],
-        }
+        },
     }
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
     assert evaluator({}) == 5
@@ -561,7 +560,7 @@ def test_builder_handles_mathjs_function_reference():
             "type": "FunctionNode",
             "fn": {"name": "max"},
             "args": [const(1), const(2)],
-        }
+        },
     }
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
     assert evaluator({}) == 2
@@ -620,7 +619,7 @@ def test_ifnull_numpy_nan_array():
         {
             "x": np.array([np.nan, 2]),
             "fallback": np.array([0, 0]),
-        }
+        },
     )
     np.testing.assert_allclose(result, [0, 2])
 
@@ -911,7 +910,7 @@ def test_function_node_with_object_fn():
             "type": "FunctionNode",
             "fn": {"name": "min"},
             "args": [const(3), const(4)],
-        }
+        },
     }
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
     assert evaluator({}) == 3
@@ -928,7 +927,7 @@ def test_array_argument_must_be_mapping():
         "res": {
             "type": "ArrayNode",
             "items": [const(1), None],
-        }
+        },
     }
     with pytest.raises(InvalidNodeError):
         build_evaluator(expressions=expressions, inputs=[], target="res")
@@ -940,7 +939,7 @@ def test_operator_requires_mapping_children():
             "type": "OperatorNode",
             "fn": "add",
             "args": [const(1), None],
-        }
+        },
     }
     with pytest.raises(InvalidNodeError):
         build_evaluator(expressions=expressions, inputs=[], target="res")
@@ -972,7 +971,7 @@ def test_symbol_with_mathjs_field():
             "type": "OperatorNode",
             "fn": "add",
             "args": [symbol("x", use_mathjs=True), const(1)],
-        }
+        },
     }
     evaluator = build_evaluator(
         expressions=expressions,

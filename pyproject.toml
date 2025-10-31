@@ -57,6 +57,12 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["ALL"]
+ignore = ["ANN204", "D107", "D203", "D213", "EM101", "EM102", "PLR0911", "PLR2004", "TRY003"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/mathjs_to_func/ast_builder.py" = ["ANN401", "ARG002", "D102", "N802"]
+"src/mathjs_to_func/compiler.py" = ["S102"]
+"tests/*.py" = ["ANN001", "ANN002", "ANN201", "D100", "D102", "D103", "D400", "D415", "E501", "F401", "FBT003", "INP001", "PLC0415", "PLR0913", "PLR2004", "PT006", "PT009", "PT027", "S101", "SIM115", "TRY003"]
 
 [tool.ruff.format]
 # Same as Black.

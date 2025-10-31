@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable, Mapping
 from collections.abc import Mapping as AbcMapping
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from .ast_builder import (
     MathJsAstBuilder,
@@ -61,7 +62,7 @@ def _validate_expressions(
             raise ExpressionError(f"Duplicate expression identifier: {name}")
         if name in input_names:
             raise ExpressionError(
-                f"Expression identifier {name!r} conflicts with input identifier"
+                f"Expression identifier {name!r} conflicts with input identifier",
             )
         if not isinstance(node, AbcMapping):
             raise InvalidNodeError(
@@ -131,10 +132,10 @@ def _build_function_ast(
                         keywords=[],
                     ),
                     cause=None,
-                )
+                ),
             ],
             orelse=[],
-        )
+        ),
     )
 
     required_set = ast.Set(elts=[ast.Constant(value=name) for name in required_inputs])
@@ -149,7 +150,7 @@ def _build_function_ast(
                 ),
                 args=[],
                 keywords=[],
-            )
+            ),
         ],
         keywords=[],
     )
@@ -157,7 +158,7 @@ def _build_function_ast(
         ast.Assign(
             targets=[ast.Name(id="_scope_keys", ctx=ast.Store())],
             value=scope_key_call,
-        )
+        ),
     )
     body.append(
         ast.Assign(
@@ -167,7 +168,7 @@ def _build_function_ast(
                 op=ast.Sub(),
                 right=ast.Name(id="_scope_keys", ctx=ast.Load()),
             ),
-        )
+        ),
     )
 
     missing_message = ast.JoinedStr(
@@ -182,7 +183,7 @@ def _build_function_ast(
                 conversion=-1,
                 format_spec=None,
             ),
-        ]
+        ],
     )
     body.append(
         ast.If(
@@ -195,10 +196,10 @@ def _build_function_ast(
                         keywords=[],
                     ),
                     cause=None,
-                )
+                ),
             ],
             orelse=[],
-        )
+        ),
     )
 
     allowed_set = ast.Set(elts=[ast.Constant(value=name) for name in allowed_inputs])
@@ -210,7 +211,7 @@ def _build_function_ast(
                 op=ast.Sub(),
                 right=allowed_set,
             ),
-        )
+        ),
     )
 
     extra_message = ast.JoinedStr(
@@ -225,7 +226,7 @@ def _build_function_ast(
                 conversion=-1,
                 format_spec=None,
             ),
-        ]
+        ],
     )
     body.append(
         ast.If(
@@ -238,10 +239,10 @@ def _build_function_ast(
                         keywords=[],
                     ),
                     cause=None,
-                )
+                ),
             ],
             orelse=[],
-        )
+        ),
     )
 
     for name in required_inputs:
@@ -253,7 +254,7 @@ def _build_function_ast(
                     slice=ast.Constant(value=name),
                     ctx=ast.Load(),
                 ),
-            )
+            ),
         )
 
     for expr_name in evaluation_order:
@@ -262,7 +263,7 @@ def _build_function_ast(
             ast.Assign(
                 targets=[ast.Name(id=expr_name, ctx=ast.Store())],
                 value=expr_ast,
-            )
+            ),
         )
 
     body.append(ast.Return(value=ast.Name(id=target, ctx=ast.Load())))
@@ -320,7 +321,7 @@ def compile_to_callable(
 
     closure = _dependency_closure(target, dependency_map, set(validated_exprs))
     required_inputs = sorted(
-        {dep for expr in closure for dep in dependency_map[expr] if dep in input_set}
+        {dep for expr in closure for dep in dependency_map[expr] if dep in input_set},
     )
 
     sorter = TopologicalSorter()
@@ -365,4 +366,4 @@ def compile_to_callable(
     )
 
 
-__all__ = ["compile_to_callable", "CompilationResult"]
+__all__ = ["CompilationResult", "compile_to_callable"]

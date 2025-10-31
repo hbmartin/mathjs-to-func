@@ -5,8 +5,10 @@ from __future__ import annotations
 import ast
 import math
 import re
-from collections.abc import Iterable as AbcIterable, Mapping as AbcMapping
-from typing import Any, Mapping, TypeVar, Generic
+from collections.abc import Iterable as AbcIterable
+from collections.abc import Mapping
+from collections.abc import Mapping as AbcMapping
+from typing import Any, Generic, TypeVar
 
 from .errors import InvalidNodeError
 
@@ -399,9 +401,9 @@ class SymbolDependencyCollector(MathJsAstVisitor[set[str]]):
 
 
 __all__ = [
+    "IDENTIFIER_PATTERN",
     "MathJsAstBuilder",
     "MathJsAstVisitor",
     "SymbolDependencyCollector",
     "ensure_identifier",
-    "IDENTIFIER_PATTERN",
 ]

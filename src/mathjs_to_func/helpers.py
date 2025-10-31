@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from functools import reduce
-from typing import Iterable, Sequence
 
 import numpy as np
 
@@ -148,10 +148,10 @@ HELPER_FUNCTIONS = {
 }
 
 __all__ = [
-    "HELPER_NAME_MAP",
     "HELPER_FUNCTIONS",
-    "_mj_min",
-    "_mj_max",
-    "_mj_sum",
+    "HELPER_NAME_MAP",
     "_mj_ifnull",
+    "_mj_max",
+    "_mj_min",
+    "_mj_sum",
 ]

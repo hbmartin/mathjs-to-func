@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Mapping
-from typing import Any, Callable
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any
 
 from .compiler import CompilationResult, compile_to_callable
 from .errors import (
@@ -17,13 +17,13 @@ from .errors import (
 )
 
 __all__ = [
-    "build_evaluator",
     "CircularDependencyError",
     "ExpressionError",
     "InputValidationError",
     "InvalidNodeError",
     "MissingTargetError",
     "UnknownIdentifierError",
+    "build_evaluator",
 ]
 
 
@@ -46,7 +46,7 @@ def _extract_payload(
         except KeyError as exc:
             missing = exc.args[0]
             raise ExpressionError(
-                f"Payload missing required key: {missing}", expression=None
+                f"Payload missing required key: {missing}", expression=None,
             ) from exc
     if expressions is None or inputs is None or target is None:
         raise ExpressionError("Expressions, inputs, and target are required")
@@ -68,7 +68,6 @@ def build_evaluator(
     single mapping argument containing the input values and returns the computed
     target value.
     """
-
     expressions, inputs, target = _extract_payload(expressions, inputs, target, payload)
 
     result: CompilationResult = compile_to_callable(
@@ -78,11 +77,11 @@ def build_evaluator(
     )
 
     func = result.function
-    setattr(func, "__mathjs_required_inputs__", result.required_inputs)
-    setattr(func, "__mathjs_evaluation_order__", result.evaluation_order)
+    func.__mathjs_required_inputs__ = result.required_inputs
+    func.__mathjs_evaluation_order__ = result.evaluation_order
 
     if include_source:
         source = ast.unparse(result.module_ast)
-        setattr(func, "__mathjs_source__", source)
+        func.__mathjs_source__ = source
 
     return func
