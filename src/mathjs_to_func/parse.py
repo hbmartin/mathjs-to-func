@@ -136,6 +136,4 @@ def parse(source: str) -> dict[str, Any]:
         node = _NODE_ADAPTER.validate_json(source)
     except (ValidationError, JSONDecodeError) as exc:
         raise ValueError("Invalid math.js JSON payload") from exc
-    if not isinstance(node, _MathjsBaseModel):
-        raise TypeError("Unexpected node type produced by parser")
     return node.as_ast()
