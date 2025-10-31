@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable, Mapping
 from collections.abc import Mapping as AbcMapping
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from .ast_builder import (
     MathJsAstBuilder,
@@ -85,9 +86,9 @@ def _dependency_closure(
         if current in needed:
             continue
         needed.add(current)
-        for dep in dependency_map[current]:
-            if dep in expression_names:
-                stack.append(dep)
+        stack.extend(
+            dep for dep in dependency_map[current] if dep in expression_names
+        )
     return needed
 
 
@@ -244,26 +245,25 @@ def _build_function_ast(
         ),
     )
 
-    for name in required_inputs:
-        body.append(
-            ast.Assign(
-                targets=[ast.Name(id=name, ctx=ast.Store())],
-                value=ast.Subscript(
-                    value=ast.Name(id="scope", ctx=ast.Load()),
-                    slice=ast.Constant(value=name),
-                    ctx=ast.Load(),
-                ),
+    body.extend(
+        ast.Assign(
+            targets=[ast.Name(id=name, ctx=ast.Store())],
+            value=ast.Subscript(
+                value=ast.Name(id="scope", ctx=ast.Load()),
+                slice=ast.Constant(value=name),
+                ctx=ast.Load(),
             ),
         )
+        for name in required_inputs
+    )
 
-    for expr_name in evaluation_order:
-        expr_ast = _builder(expr_name).build(expressions[expr_name])
-        body.append(
-            ast.Assign(
-                targets=[ast.Name(id=expr_name, ctx=ast.Store())],
-                value=expr_ast,
-            ),
+    body.extend(
+        ast.Assign(
+            targets=[ast.Name(id=expr_name, ctx=ast.Store())],
+            value=_builder(expr_name).build(expressions[expr_name]),
         )
+        for expr_name in evaluation_order
+    )
 
     body.append(ast.Return(value=ast.Name(id=target, ctx=ast.Load())))
 
@@ -292,6 +292,7 @@ def compile_to_callable(
     inputs: Iterable[str],
     target: str,
 ) -> CompilationResult:
+    """Compile expressions into an executable callable with dependency metadata."""
     if not isinstance(target, str):
         raise ExpressionError("Target identifier must be a string")
     target = ensure_identifier(target, expression=None)
@@ -331,8 +332,11 @@ def compile_to_callable(
     try:
         order = tuple(sorter.static_order())
     except CycleError as exc:
-        cycle = tuple(exc.args[1]) if len(exc.args) > 1 else tuple()
-        raise CircularDependencyError("Dependency cycle detected", cycle=cycle)
+        cycle = tuple(exc.args[1]) if len(exc.args) > 1 else ()
+        raise CircularDependencyError(
+            "Dependency cycle detected",
+            cycle=cycle,
+        ) from exc
 
     module_ast = _build_function_ast(
         evaluation_order=order,

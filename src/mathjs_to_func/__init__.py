@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import ast
-from typing import Any, Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any
 
 from .compiler import CompilationResult, compile_to_callable
 from .errors import (

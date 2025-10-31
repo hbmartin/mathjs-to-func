@@ -6,8 +6,9 @@ import ast
 import math
 import re
 from collections.abc import Iterable as AbcIterable
+from collections.abc import Mapping
 from collections.abc import Mapping as AbcMapping
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import InvalidNodeError
 
@@ -15,6 +16,7 @@ IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def ensure_identifier(name: str, *, expression: str | None) -> str:
+    """Validate and return a safe identifier for generated expressions."""
     if not IDENTIFIER_PATTERN.match(name):
         raise InvalidNodeError(
             f"Unsupported identifier name: {name!r}",
@@ -35,10 +37,7 @@ def _extract_type(node: Mapping[str, Any]) -> str:
     return node_type
 
 
-T = TypeVar("T")
-
-
-class MathJsAstVisitor(Generic[T]):
+class MathJsAstVisitor[T]:
     """Generic visitor for math.js AST nodes."""
 
     def __init__(self, *, expression_name: str) -> None:
@@ -96,12 +95,24 @@ def _to_number(value: Any, *, expression: str | None) -> float | int:
             )
         return value
     if isinstance(value, str):
-        try:
-            if "." in value or "e" in value.lower():
+        lowered = value.lower()
+        if "." in value or "e" in lowered:
+            try:
                 parsed = float(value)
-                if not math.isfinite(parsed):
-                    raise ValueError
-                return parsed
+            except ValueError as exc:
+                raise InvalidNodeError(
+                    f"Invalid numeric literal: {value!r}",
+                    expression=expression,
+                    node=None,
+                ) from exc
+            if not math.isfinite(parsed):
+                raise InvalidNodeError(
+                    "Non-finite literal encountered",
+                    expression=expression,
+                    node=None,
+                )
+            return parsed
+        try:
             return int(value, 10)
         except ValueError as exc:
             raise InvalidNodeError(
@@ -138,10 +149,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
             number = _to_number(value, expression=self.expression_name)
             return ast.Constant(value=number)
         if value_type == "boolean":
-            if isinstance(value, str):
-                parsed = value.lower() == "true"
-            else:
-                parsed = bool(value)
+            parsed = value.lower() == "true" if isinstance(value, str) else bool(value)
             return ast.Constant(value=parsed)
         if value_type == "null":
             return ast.Constant(value=None)
@@ -249,10 +257,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
 
     def visit_FunctionNode(self, node: Mapping[str, Any]) -> ast.expr:
         raw_fn = node.get("fn")
-        if isinstance(raw_fn, Mapping):
-            fn_name = raw_fn.get("name")
-        else:
-            fn_name = raw_fn
+        fn_name = raw_fn.get("name") if isinstance(raw_fn, AbcMapping) else raw_fn
         if not isinstance(fn_name, str):
             raise InvalidNodeError(
                 "FunctionNode missing function name",

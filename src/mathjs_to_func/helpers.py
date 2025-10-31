@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Sequence
 from functools import reduce
-from typing import Callable, Iterable, Sequence
 
 import numpy as np
 
@@ -30,7 +30,10 @@ def _maybe_scalar(value: object) -> object:
     return value
 
 
-def _elementwise_reduce(func, values: Iterable[object]) -> object:
+def _elementwise_reduce(
+    func: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    values: Iterable[object],
+) -> object:
     iterator = iter(values)
     try:
         first = next(iterator)
