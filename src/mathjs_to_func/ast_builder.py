@@ -370,13 +370,18 @@ class SymbolDependencyCollector(MathJsAstVisitor[set[str]]):
         return result
 
     def visit_FunctionNode(self, node: Mapping[str, Any]) -> set[str]:
+        result: set[str] = set()
+        raw_fn = node.get("fn")
+        if isinstance(raw_fn, AbcMapping):
+            fn_type = raw_fn.get("type") or raw_fn.get("mathjs")
+            if isinstance(fn_type, str):
+                result.update(self.visit(raw_fn))
         args = node.get("args") or []
         args_list = self._ensure_iterable(
             args,
             node=node,
             message="FunctionNode args must be iterable",
         )
-        result: set[str] = set()
         for arg in args_list:
             child = self._ensure_mapping(
                 arg,

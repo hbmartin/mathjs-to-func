@@ -1,12 +1,15 @@
 # mathjs-to-func
 
+[![PyPI](https://img.shields.io/pypi/v/mathjs-to-func.svg)](https://pypi.org/project/mathjs-to-func/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
+[![ty](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ty/main/assets/badge/v0.json)](https://github.com/astral-sh/ty)
+[![CI](https://github.com/hbmartin/mathjs-to-func/actions/workflows/ci.yml/badge.svg)](https://github.com/hbmartin/mathjs-to-func/actions/workflows/ci.yml)
+
+
 A tiny Python library that compiles serialized [math.js](https://mathjs.org/) expression trees into fast, reusable Python callables. The generated function respects dependency ordering, validates inputs, and mirrors a subset of math.js operators (`+`, `-`, `*`, `/`, `^`, `%`, unary plus/minus) and functions (`min`, `max`, `sum`, `ifnull`).
 
-## Why
-
-Front-ends often rely on math.js for authoring formulas. Shipping those formulas to the backend as plain strings forces the server to reparse and interpret unsafe text. mathjs-to-func lets you send the math.js **serialized AST** instead, then compiles it into a safe Python function that can be executed repeatedly with minimal overhead.
-
-Key goals:
+## Key Features
 - Execute without reparsing or repeatedly walking the JSON graph.
 - Detect dependency cycles and missing identifiers early.
 - Keep execution sandboxed by compiling a controlled Python AST.
