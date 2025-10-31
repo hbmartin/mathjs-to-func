@@ -277,6 +277,9 @@ def _build_function_ast(
         ),
         body=body,
         decorator_list=[],
+        returns=None,
+        type_comment=None,
+        type_params=[],
     )
 
     module = ast.Module(body=[func_def], type_ignores=[])

@@ -82,5 +82,5 @@ def test_parse_function_node_works_with_build_evaluator():
 
 
 def test_parse_invalid_payload_raises_value_error():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Invalid math.js JSON payload"):
         parse('{"type": "UnknownNode", "value": 1}')

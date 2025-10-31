@@ -20,42 +20,16 @@ A tiny Python library that compiles serialized [math.js](https://mathjs.org/) ex
 The project uses [uv](https://github.com/astral-sh/uv) for dependency and virtualenv management. From the repository root:
 
 ```bash
-uv sync  # create the virtual environment declared in uv.lock
+uv add mathjs-to-func
 ```
 
 An optional `parse` extra installs a JSON-to-math.js parser powered by Pydantic:
 
 ```bash
-uv sync --extra parse
+uv add mathjs-to-func --extra parse
 ```
 
-### Parsing math.js JSON
-
-With the extra installed you can turn serialized math.js nodes into evaluator-ready mappings:
-
-```python
-from mathjs_to_func import build_evaluator
-from mathjs_to_func.parse import parse
-
-expression = parse(
-    '{"type": "OperatorNode", "fn": "add", "args": [\n'
-    '    {"type": "SymbolNode", "name": "x"},\n'
-    '    {"type": "ConstantNode", "value": "2", "valueType": "number"}\n'
-    ']}'
-)
-
-evaluator = build_evaluator(
-    expressions={"total": expression},
-    inputs=["x"],
-    target="total",
-)
-
-result = evaluator({"x": 40})  # -> 42
-```
-
-All examples below assume commands are wrapped with `uv run ...` to execute inside the managed environment.
-
-## Public API
+## Compiling A Function
 
 ```python
 from mathjs_to_func import build_evaluator
@@ -132,6 +106,36 @@ Unknown node types, invalid identifiers, or disallowed functions raise `InvalidN
 - `InputValidationError`: the compiled function received inputs that are missing, unexpected, or not a mapping.
 
 All exceptions provide enough context (`expression` name, offending identifier, cycle list, etc.) to surface descriptive UI errors.
+
+## Parsing math.js JSON
+
+With the extra installed you can turn serialized math.js nodes into evaluator-ready mappings:
+
+```python
+from mathjs_to_func import build_evaluator
+from mathjs_to_func.parse import parse
+
+expression = parse(
+    """{
+    "type": "OperatorNode",
+    "fn": "add",
+    "args": [
+        {"type": "SymbolNode", "name": "x"},
+        {"type": "ConstantNode", "value": "2", "valueType": "number"}
+    ]
+}"""
+)
+
+evaluator = build_evaluator(
+    expressions={"total": expression},
+    inputs=["x"],
+    target="total",
+)
+
+result = evaluator({"x": 40})  # -> 42
+```
+
+All examples below assume commands are wrapped with `uv run ...` to execute inside the managed environment.
 
 ## Implementation Notes
 

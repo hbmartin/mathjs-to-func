@@ -12,7 +12,6 @@ from pydantic import (
     Field,
     TypeAdapter,
     ValidationError,
-    model_validator,
 )
 
 __all__ = ["parse"]
@@ -53,14 +52,10 @@ class ParenthesisNode(_MathjsBaseModel):
         validation_alias=AliasChoices("type", "mathjs"),
         serialization_alias="type",
     )
-    content: MathjsExpression | None = None
-    expr: MathjsExpression | None = None
-
-    @model_validator(mode="after")
-    def _ensure_child(self) -> ParenthesisNode:
-        if self.content is None and self.expr is None:
-            raise ValueError("ParenthesisNode requires 'content' or 'expr'")
-        return self
+    content: MathjsExpression = Field(
+        validation_alias=AliasChoices("content", "expr"),
+        serialization_alias="content",
+    )
 
 
 class OperatorNode(_MathjsBaseModel):
@@ -140,6 +135,4 @@ def parse(source: str) -> dict[str, Any]:
         node = _NODE_ADAPTER.validate_json(source)
     except (ValidationError, JSONDecodeError) as exc:
         raise ValueError("Invalid math.js JSON payload") from exc
-    if not isinstance(node, _MathjsBaseModel):
-        raise TypeError("Unexpected node type produced by parser")
     return node.as_ast()
