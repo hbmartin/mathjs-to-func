@@ -98,6 +98,8 @@ class MathJsAstBuilder:
             else:
                 parsed = bool(value)
             return ast.Constant(value=parsed)
+        if value_type == "null":
+            return ast.Constant(value=None)
         raise InvalidNodeError(
             f"Unsupported constant value type: {value_type!r}",
             expression=self.expression_name,
@@ -241,6 +243,20 @@ class MathJsAstBuilder:
                     node=node,
                 )
             call_args.append(self.build(arg))
+
+        if normalized == "ifnull" and len(call_args) != 2:
+            raise InvalidNodeError(
+                "ifnull expects exactly two arguments",
+                expression=self.expression_name,
+                node=node,
+            )
+
+        if normalized in {"min", "max", "sum"} and not call_args:
+            raise InvalidNodeError(
+                f"{normalized} requires at least one argument",
+                expression=self.expression_name,
+                node=node,
+            )
         return ast.Call(
             func=ast.Name(id=helper_name, ctx=ast.Load()),
             args=call_args,

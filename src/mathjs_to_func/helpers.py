@@ -24,12 +24,6 @@ def _expand_args(args: Sequence[object]) -> list[object]:
     return list(args)
 
 
-def _coerce(value: object) -> object:
-    if isinstance(value, (list, tuple)):
-        return np.asarray(value)
-    return value
-
-
 def _maybe_scalar(value: object) -> object:
     if isinstance(value, np.ndarray) and value.ndim == 0:
         return value.item()
@@ -49,35 +43,79 @@ def _elementwise_reduce(func, values: Iterable[object]) -> object:
 
 
 def _mj_min(*args: object) -> object:
-    values = [_coerce(v) for v in _expand_args(args)]
+    raw_values = _expand_args(args)
+    values: list[object] = []
+    has_array = False
+    for item in raw_values:
+        if isinstance(item, np.ndarray):
+            values.append(item)
+            has_array = True
+        elif isinstance(item, (list, tuple)):
+            arr = np.asarray(item)
+            values.append(arr)
+            has_array = True
+        else:
+            values.append(item)
     if not values:
         raise ValueError("min requires at least one argument")
-    if any(isinstance(v, np.ndarray) for v in values):
-        return _elementwise_reduce(np.minimum, values)
+    if has_array:
+        arrays = [np.asarray(v) for v in values]
+        if len(arrays) == 1:
+            return _maybe_scalar(np.min(arrays[0]))
+        return _elementwise_reduce(np.minimum, arrays)
     return min(values)
 
 
 def _mj_max(*args: object) -> object:
-    values = [_coerce(v) for v in _expand_args(args)]
+    raw_values = _expand_args(args)
+    values: list[object] = []
+    has_array = False
+    for item in raw_values:
+        if isinstance(item, np.ndarray):
+            values.append(item)
+            has_array = True
+        elif isinstance(item, (list, tuple)):
+            arr = np.asarray(item)
+            values.append(arr)
+            has_array = True
+        else:
+            values.append(item)
     if not values:
         raise ValueError("max requires at least one argument")
-    if any(isinstance(v, np.ndarray) for v in values):
-        return _elementwise_reduce(np.maximum, values)
+    if has_array:
+        arrays = [np.asarray(v) for v in values]
+        if len(arrays) == 1:
+            return _maybe_scalar(np.max(arrays[0]))
+        return _elementwise_reduce(np.maximum, arrays)
     return max(values)
 
 
 def _mj_sum(*args: object) -> object:
-    values = [_coerce(v) for v in _expand_args(args)]
+    raw_values = _expand_args(args)
+    values: list[object] = []
+    has_array = False
+    for item in raw_values:
+        if isinstance(item, np.ndarray):
+            values.append(item)
+            has_array = True
+        elif isinstance(item, (list, tuple)):
+            arr = np.asarray(item)
+            values.append(arr)
+            has_array = True
+        else:
+            values.append(item)
     if not values:
         raise ValueError("sum requires at least one argument")
 
-    if all(isinstance(v, (int, float, np.number)) for v in values):
-        return sum(values)  # type: ignore[arg-type]
-
-    if any(isinstance(v, np.ndarray) for v in values):
-        stacked = [np.asarray(v) for v in values]
-        result = reduce(np.add, stacked)
+    if has_array:
+        arrays = [np.asarray(v) for v in values]
+        if len(arrays) == 1:
+            return _maybe_scalar(np.sum(arrays[0]))
+        result = reduce(np.add, arrays)
         return _maybe_scalar(result)
+
+    if all(isinstance(v, (int, float, np.number, bool, np.bool_)) for v in values):
+        return sum(values)  # type: ignore[arg-type]
 
     result = values[0]
     for item in values[1:]:
