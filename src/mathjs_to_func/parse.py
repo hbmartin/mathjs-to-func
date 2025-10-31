@@ -53,14 +53,10 @@ class ParenthesisNode(_MathjsBaseModel):
         validation_alias=AliasChoices("type", "mathjs"),
         serialization_alias="type",
     )
-    content: MathjsExpression | None = None
-    expr: MathjsExpression | None = None
-
-    @model_validator(mode="after")
-    def _ensure_child(self) -> ParenthesisNode:
-        if self.content is None and self.expr is None:
-            raise ValueError("ParenthesisNode requires 'content' or 'expr'")
-        return self
+    content: MathjsExpression = Field(
+        validation_alias=AliasChoices("content", "expr"),
+        serialization_alias="content",
+    )
 
 
 class OperatorNode(_MathjsBaseModel):
