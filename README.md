@@ -6,7 +6,6 @@
 [![ty](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ty/main/assets/badge/v0.json)](https://github.com/astral-sh/ty)
 [![CI](https://github.com/hbmartin/mathjs-to-func/actions/workflows/ci.yml/badge.svg)](https://github.com/hbmartin/mathjs-to-func/actions/workflows/ci.yml)
 
-
 A tiny Python library that compiles serialized [math.js](https://mathjs.org/) expression trees into fast, reusable Python callables. The generated function respects dependency ordering, validates inputs, and mirrors a subset of math.js operators (`+`, `-`, `*`, `/`, `^`, `%`, unary plus/minus) and functions (`min`, `max`, `sum`, `ifnull`).
 
 ## Key Features
