@@ -423,7 +423,9 @@ def test_nested_functions_and_arrays():
         ),
     }
     evaluator = build_evaluator(
-        expressions=expressions, inputs=["x", "y"], target="avg"
+        expressions=expressions,
+        inputs=["x", "y"],
+        target="avg",
     )
     assert evaluator({"x": 4, "y": 1}) == pytest.approx(7 / 3)
 
@@ -641,7 +643,9 @@ def test_dependency_graph_ignores_unused_inputs():
 def test_payload_and_direct_args_conflict():
     payload = {"expressions": {"res": const(1)}, "inputs": [], "target": "res"}
     evaluator = build_evaluator(
-        expressions=payload["expressions"], inputs=[], target="res"
+        expressions=payload["expressions"],
+        inputs=[],
+        target="res",
     )
     assert evaluator({}) == 1
 
