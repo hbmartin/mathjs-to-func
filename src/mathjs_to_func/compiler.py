@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
 from typing import Any, Iterable, Mapping
 
-from .ast_builder import MathJsAstBuilder, ensure_identifier
+from .ast_builder import (
+    MathJsAstBuilder,
+    SymbolDependencyCollector,
+    ensure_identifier,
+)
 from .errors import (
     CircularDependencyError,
     ExpressionError,
@@ -28,107 +32,6 @@ class CompilationResult:
     required_inputs: tuple[str, ...]
     evaluation_order: tuple[str, ...]
     module_ast: ast.Module
-
-
-def _collect_symbol_dependencies(
-    node: Mapping[str, Any],
-    *,
-    expression: str,
-) -> set[str]:
-    node_type = node.get("type") or node.get("mathjs")
-    if not isinstance(node_type, str):
-        raise InvalidNodeError(
-            "Node is missing 'type' field",
-            expression=expression,
-            node=node,
-        )
-
-    if node_type == "SymbolNode":
-        name = node.get("name")
-        if not isinstance(name, str):
-            raise InvalidNodeError(
-                "SymbolNode missing name",
-                expression=expression,
-                node=node,
-            )
-        ensure_identifier(name, expression=expression)
-        return {name}
-
-    if node_type == "ConstantNode":
-        return set()
-
-    if node_type == "ParenthesisNode":
-        content = node.get("content") or node.get("expr")
-        if not isinstance(content, AbcMapping):
-            raise InvalidNodeError(
-                "ParenthesisNode missing child content",
-                expression=expression,
-                node=node,
-            )
-        return _collect_symbol_dependencies(content, expression=expression)
-
-    if node_type == "OperatorNode":
-        args = node.get("args")
-        if not isinstance(args, Iterable):
-            raise InvalidNodeError(
-                "OperatorNode missing args",
-                expression=expression,
-                node=node,
-            )
-        result: set[str] = set()
-        for child in args:
-            if not isinstance(child, AbcMapping):
-                raise InvalidNodeError(
-                    "OperatorNode argument must be object",
-                    expression=expression,
-                    node=node,
-                )
-            result.update(_collect_symbol_dependencies(child, expression=expression))
-        return result
-
-    if node_type == "FunctionNode":
-        args = node.get("args") or []
-        if not isinstance(args, Iterable):
-            raise InvalidNodeError(
-                "FunctionNode args must be iterable",
-                expression=expression,
-                node=node,
-            )
-        result: set[str] = set()
-        for child in args:
-            if not isinstance(child, AbcMapping):
-                raise InvalidNodeError(
-                    "FunctionNode argument must be object",
-                    expression=expression,
-                    node=node,
-                )
-            result.update(_collect_symbol_dependencies(child, expression=expression))
-        return result
-
-    if node_type == "ArrayNode":
-        items = node.get("items")
-        if not isinstance(items, Iterable):
-            raise InvalidNodeError(
-                "ArrayNode items must be iterable",
-                expression=expression,
-                node=node,
-            )
-        result: set[str] = set()
-        for item in items:
-            if not isinstance(item, AbcMapping):
-                raise InvalidNodeError(
-                    "ArrayNode element must be object",
-                    expression=expression,
-                    node=node,
-                )
-            result.update(_collect_symbol_dependencies(item, expression=expression))
-        return result
-
-    raise InvalidNodeError(
-        f"Unsupported node type {node_type!r}",
-        expression=expression,
-        node=node,
-    )
 
 
 def _normalise_inputs(inputs: Iterable[str]) -> tuple[str, ...]:
@@ -234,10 +137,8 @@ def _build_function_ast(
         )
     )
 
-    required_set = ast.Set(
-        elts=[ast.Constant(value=name) for name in required_inputs]
-    )
-    scope_key_set = ast.Call(
+    required_set = ast.Set(elts=[ast.Constant(value=name) for name in required_inputs])
+    scope_key_call = ast.Call(
         func=ast.Name(id="set", ctx=ast.Load()),
         args=[
             ast.Call(
@@ -254,8 +155,18 @@ def _build_function_ast(
     )
     body.append(
         ast.Assign(
+            targets=[ast.Name(id="_scope_keys", ctx=ast.Store())],
+            value=scope_key_call,
+        )
+    )
+    body.append(
+        ast.Assign(
             targets=[ast.Name(id="_missing", ctx=ast.Store())],
-            value=ast.BinOp(left=required_set, op=ast.Sub(), right=scope_key_set),
+            value=ast.BinOp(
+                left=required_set,
+                op=ast.Sub(),
+                right=ast.Name(id="_scope_keys", ctx=ast.Load()),
+            ),
         )
     )
 
@@ -290,29 +201,12 @@ def _build_function_ast(
         )
     )
 
-    scope_key_set_again = ast.Call(
-        func=ast.Name(id="set", ctx=ast.Load()),
-        args=[
-            ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="scope", ctx=ast.Load()),
-                    attr="keys",
-                    ctx=ast.Load(),
-                ),
-                args=[],
-                keywords=[],
-            )
-        ],
-        keywords=[],
-    )
-    allowed_set = ast.Set(
-        elts=[ast.Constant(value=name) for name in allowed_inputs]
-    )
+    allowed_set = ast.Set(elts=[ast.Constant(value=name) for name in allowed_inputs])
     body.append(
         ast.Assign(
             targets=[ast.Name(id="_extra", ctx=ast.Store())],
             value=ast.BinOp(
-                left=scope_key_set_again,
+                left=ast.Name(id="_scope_keys", ctx=ast.Load()),
                 op=ast.Sub(),
                 right=allowed_set,
             ),
@@ -412,7 +306,8 @@ def compile_to_callable(
 
     dependency_map: dict[str, set[str]] = {}
     for name, node in validated_exprs.items():
-        deps = _collect_symbol_dependencies(node, expression=name)
+        collector = SymbolDependencyCollector(expression_name=name)
+        deps = collector.collect(node)
         unknown = deps - input_set - set(validated_exprs)
         if unknown:
             identifier = sorted(unknown)[0]

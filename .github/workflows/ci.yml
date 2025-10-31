@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  testing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+
+      - name: Check code formatting with ruff
+        run: uv run ruff check
+
+      - name: Type check with ty
+        run: uv run ty check src
+
+      - name: Check code formatting with black
+        run: uv run black --check --diff src
+
+      - run: uv run pytest

@@ -55,4 +55,3 @@ class InvalidNodeError(ExpressionError):
 
 class InputValidationError(ExpressionError):
     """Raised when inputs passed to the compiled function are invalid."""
-
