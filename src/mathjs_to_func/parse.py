@@ -12,7 +12,6 @@ from pydantic import (
     Field,
     TypeAdapter,
     ValidationError,
-    model_validator,
 )
 
 __all__ = ["parse"]
