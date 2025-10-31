@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
 from functools import reduce
+from typing import Callable, Iterable, Sequence
 
 import numpy as np
 

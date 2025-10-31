@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Mapping
 from collections.abc import Mapping as AbcMapping
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
-from typing import Any
+from typing import Any, Iterable, Mapping
 
 from .ast_builder import (
     MathJsAstBuilder,
