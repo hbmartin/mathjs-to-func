@@ -140,7 +140,7 @@ def _build_function_ast(
     required_set = ast.Set(
         elts=[ast.Constant(value=name) for name in required_inputs]
     )
-    scope_key_set = ast.Call(
+    scope_key_call = ast.Call(
         func=ast.Name(id="set", ctx=ast.Load()),
         args=[
             ast.Call(
@@ -157,8 +157,18 @@ def _build_function_ast(
     )
     body.append(
         ast.Assign(
+            targets=[ast.Name(id="_scope_keys", ctx=ast.Store())],
+            value=scope_key_call,
+        )
+    )
+    body.append(
+        ast.Assign(
             targets=[ast.Name(id="_missing", ctx=ast.Store())],
-            value=ast.BinOp(left=required_set, op=ast.Sub(), right=scope_key_set),
+            value=ast.BinOp(
+                left=required_set,
+                op=ast.Sub(),
+                right=ast.Name(id="_scope_keys", ctx=ast.Load()),
+            ),
         )
     )
 
@@ -193,21 +203,6 @@ def _build_function_ast(
         )
     )
 
-    scope_key_set_again = ast.Call(
-        func=ast.Name(id="set", ctx=ast.Load()),
-        args=[
-            ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="scope", ctx=ast.Load()),
-                    attr="keys",
-                    ctx=ast.Load(),
-                ),
-                args=[],
-                keywords=[],
-            )
-        ],
-        keywords=[],
-    )
     allowed_set = ast.Set(
         elts=[ast.Constant(value=name) for name in allowed_inputs]
     )
@@ -215,7 +210,7 @@ def _build_function_ast(
         ast.Assign(
             targets=[ast.Name(id="_extra", ctx=ast.Store())],
             value=ast.BinOp(
-                left=scope_key_set_again,
+                left=ast.Name(id="_scope_keys", ctx=ast.Load()),
                 op=ast.Sub(),
                 right=allowed_set,
             ),
