@@ -654,6 +654,7 @@ def test_relational_and_conditional_nodes_vectorize():
     "value,expected",
     [
         (np.array([2, 4, 9]), [5, 4]),
+        (np.array(5), [5, 5]),
         ([[1, 2], [3, 4]], [2.5, 2.5]),
     ],
 )
@@ -665,6 +666,15 @@ def test_mean_and_median_reduce_single_array_like(value, expected):
     }
     evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
     np.testing.assert_allclose(evaluator({"x": value}), expected)
+
+
+@pytest.mark.parametrize("fn_name", ["mean", "median"])
+def test_mean_and_median_reject_empty_single_array_like(fn_name):
+    expressions = {"res": func(fn_name, symbol("x"))}
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+
+    with pytest.raises(ValueError, match=f"{fn_name} requires at least one argument"):
+        evaluator({"x": np.array([])})
 
 
 def test_scalar_and_short_circuits_right_operand():
