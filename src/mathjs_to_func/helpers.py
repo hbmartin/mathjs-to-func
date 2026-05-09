@@ -212,9 +212,10 @@ def _mj_sign(value: object) -> object:
 
 def _mj_mean(*args: object) -> object:
     if len(args) == 1 and _is_array_like(args[0]):
-        if len(args[0]) == 0:
+        array_arg = np.asarray(args[0])
+        if array_arg.size == 0:
             raise ValueError("mean requires at least one argument")
-        return _maybe_scalar(np.mean(args[0]))
+        return _maybe_scalar(np.mean(array_arg))
     values = _expand_args(args)
     if not values:
         raise ValueError("mean requires at least one argument")
@@ -223,9 +224,10 @@ def _mj_mean(*args: object) -> object:
 
 def _mj_median(*args: object) -> object:
     if len(args) == 1 and _is_array_like(args[0]):
-        if len(args[0]) == 0:
+        array_arg = np.asarray(args[0])
+        if array_arg.size == 0:
             raise ValueError("median requires at least one argument")
-        return _maybe_scalar(np.median(args[0]))
+        return _maybe_scalar(np.median(array_arg))
     values = _expand_args(args)
     if not values:
         raise ValueError("median requires at least one argument")
