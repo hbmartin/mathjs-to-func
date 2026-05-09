@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -39,7 +39,7 @@ def _expand_args(args: Sequence[object]) -> list[object]:
 
 def _maybe_scalar(value: object) -> object:
     if isinstance(value, np.ndarray) and value.ndim == 0:
-        return value.item()
+        return value.item()  # ty: ignore[no-matching-overload]
     return value
 
 
@@ -53,12 +53,12 @@ def _maybe_bool(value: object) -> object:
     return value
 
 
-def _unary_numpy(func: Callable[[object], object], value: object) -> object:
+def _unary_numpy(func: Callable[..., Any], value: object) -> object:
     return _maybe_scalar(func(value))
 
 
 def _binary_numpy(
-    func: Callable[[object, object], object],
+    func: Callable[..., Any],
     left: object,
     right: object,
 ) -> object:
@@ -157,7 +157,7 @@ def _mj_sum(*args: object) -> object:
 
     result = values[0]
     for item in values[1:]:
-        result = result + item  # type: ignore[operator]
+        result = result + item  # type: ignore[operator]  # ty: ignore[unsupported-operator]
     return result
 
 
@@ -195,7 +195,9 @@ def _mj_exp(value: object) -> object:
 
 
 def _mj_round(value: object, decimals: object = 0) -> object:
-    return _maybe_scalar(np.round(value, int(decimals)))  # type: ignore[arg-type]
+    return _maybe_scalar(
+        np.round(value, int(decimals)),  # type: ignore[arg-type]  # ty: ignore[no-matching-overload, invalid-argument-type]
+    )
 
 
 def _mj_floor(value: object) -> object:
@@ -219,7 +221,7 @@ def _mj_mean(*args: object) -> object:
     values = _expand_args(args)
     if not values:
         raise ValueError("mean requires at least one argument")
-    return _maybe_scalar(np.mean(values, axis=0))
+    return _maybe_scalar(np.mean(np.asarray(values), axis=0))
 
 
 def _mj_median(*args: object) -> object:
@@ -231,7 +233,7 @@ def _mj_median(*args: object) -> object:
     values = _expand_args(args)
     if not values:
         raise ValueError("median requires at least one argument")
-    return _maybe_scalar(np.median(values, axis=0))
+    return _maybe_scalar(np.median(np.asarray(values), axis=0))
 
 
 def _mj_larger(left: object, right: object) -> object:
@@ -303,7 +305,9 @@ def _mj_not(value: object) -> object:
 
 
 def _mj_where(condition: object, true_value: object, false_value: object) -> object:
-    return _maybe_scalar(np.where(condition, true_value, false_value))
+    return _maybe_scalar(
+        np.where(np.asarray(condition), np.asarray(true_value), np.asarray(false_value)),
+    )
 
 
 def _mj_lazy_where(

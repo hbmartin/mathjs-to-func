@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Iterable, Mapping
 
 from .compiler import CompilationResult, compile_to_callable
 from .errors import (
@@ -20,6 +20,7 @@ from .errors import (
 
 __all__ = [
     "CircularDependencyError",
+    "CompiledEvaluator",
     "ExpressionError",
     "InputValidationError",
     "InvalidNodeError",
@@ -27,6 +28,16 @@ __all__ = [
     "UnknownIdentifierError",
     "build_evaluator",
 ]
+
+
+class CompiledEvaluator(Protocol):
+    """Callable returned by :func:`build_evaluator` with metadata attributes."""
+
+    __mathjs_required_inputs__: tuple[str, ...]
+    __mathjs_evaluation_order__: tuple[str, ...]
+    __mathjs_source__: str
+
+    def __call__(self, scope: Mapping[str, Any], /) -> Any: ...
 
 
 def _extract_payload(
@@ -63,7 +74,7 @@ def build_evaluator(
     *,
     payload: Mapping[str, Any] | None = None,
     include_source: bool = False,
-) -> Callable[[Mapping[str, Any]], Any]:
+) -> CompiledEvaluator:
     """Compile math.js expressions into a reusable callable.
 
     Parameters may be supplied directly or via ``payload`` containing the keys
@@ -87,4 +98,4 @@ def build_evaluator(
         source = ast.unparse(result.module_ast)
         func.__mathjs_source__ = source
 
-    return func
+    return cast("CompiledEvaluator", func)
