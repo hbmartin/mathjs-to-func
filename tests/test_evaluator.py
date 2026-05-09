@@ -711,6 +711,19 @@ def test_scalar_short_circuit_logical_nodes_preserve_array_right(
     np.testing.assert_array_equal(evaluator({"x": value}), expected)
 
 
+def test_none_and_array_right_returns_false_array():
+    expressions = {"res": op("and", symbol("x"), symbol("y"))}
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["x", "y"],
+        target="res",
+    )
+
+    result = evaluator({"x": None, "y": np.array([True, False])})
+
+    np.testing.assert_array_equal(result, np.array([False, False]))
+
+
 def test_scalar_conditional_short_circuits_dead_branch():
     expressions = {
         "res": {
