@@ -650,14 +650,21 @@ def test_relational_and_conditional_nodes_vectorize():
     np.testing.assert_allclose(evaluator({"x": np.array([-2, 3, -1, 4])}), [0, 3, 0, 4])
 
 
-def test_mean_and_median_reduce_single_numpy_array():
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (np.array([2, 4, 9]), [5, 4]),
+        ([[1, 2], [3, 4]], [2.5, 2.5]),
+    ],
+)
+def test_mean_and_median_reduce_single_array_like(value, expected):
     expressions = {
         "mean": func("mean", symbol("x")),
         "median": func("median", symbol("x")),
         "res": array(symbol("mean"), symbol("median")),
     }
     evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
-    np.testing.assert_allclose(evaluator({"x": np.array([2, 4, 9])}), [5, 4])
+    np.testing.assert_allclose(evaluator({"x": value}), expected)
 
 
 def test_scalar_and_short_circuits_right_operand():
@@ -684,6 +691,24 @@ def test_scalar_or_short_circuits_right_operand():
     evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
     assert evaluator({"x": 0}) is True
     assert evaluator({"x": 2}) is False
+
+
+@pytest.mark.parametrize(
+    "fn_name,left,value,expected",
+    [
+        ("and", False, np.array([True, True]), np.array([False, False])),
+        ("or", True, np.array([False, False]), np.array([True, True])),
+    ],
+)
+def test_scalar_short_circuit_logical_nodes_preserve_array_right(
+    fn_name,
+    left,
+    value,
+    expected,
+):
+    expressions = {"res": op(fn_name, const(left), symbol("x"))}
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    np.testing.assert_array_equal(evaluator({"x": value}), expected)
 
 
 def test_scalar_conditional_short_circuits_dead_branch():
