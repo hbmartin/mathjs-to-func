@@ -142,6 +142,19 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
     def build(self, node: Mapping[str, Any]) -> ast.expr:
         return self.visit(node)
 
+    def _defer(self, expression: ast.expr) -> ast.Lambda:
+        return ast.Lambda(
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=expression,
+        )
+
     def visit_ConstantNode(self, node: Mapping[str, Any]) -> ast.expr:
         value_type = node.get("valueType")
         value = node.get("value")
@@ -253,6 +266,13 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 op = ast.Pow()
             case "mod":
                 op = ast.Mod()
+            case "and" | "or":
+                helper_name = "_mj_lazy_and" if fn == "and" else "_mj_lazy_or"
+                return ast.Call(
+                    func=ast.Name(id=helper_name, ctx=ast.Load()),
+                    args=[left, self._defer(right)],
+                    keywords=[],
+                )
             case (
                 "larger"
                 | "largerEq"
@@ -260,8 +280,6 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 | "smallerEq"
                 | "equal"
                 | "unequal"
-                | "and"
-                | "or"
                 | "xor"
             ):
                 helper_name = {
@@ -271,8 +289,6 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                     "smallerEq": "_mj_smaller_eq",
                     "equal": "_mj_equal",
                     "unequal": "_mj_unequal",
-                    "and": "_mj_and",
-                    "or": "_mj_or",
                     "xor": "_mj_xor",
                 }[fn]
                 return ast.Call(
@@ -356,8 +372,12 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
             message="ConditionalNode missing false expression",
         )
         return ast.Call(
-            func=ast.Name(id="_mj_where", ctx=ast.Load()),
-            args=[self.visit(condition), self.visit(true_expr), self.visit(false_expr)],
+            func=ast.Name(id="_mj_lazy_where", ctx=ast.Load()),
+            args=[
+                self.visit(condition),
+                self._defer(self.visit(true_expr)),
+                self._defer(self.visit(false_expr)),
+            ],
             keywords=[],
         )
 

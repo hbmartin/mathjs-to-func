@@ -43,6 +43,16 @@ def _maybe_scalar(value: object) -> object:
     return value
 
 
+def _is_array_like(value: object) -> bool:
+    return isinstance(value, (list, tuple, np.ndarray))
+
+
+def _maybe_bool(value: object) -> object:
+    if isinstance(value, np.bool_):
+        return bool(value)
+    return value
+
+
 def _unary_numpy(func: Callable[[object], object], value: object) -> object:
     return _maybe_scalar(func(value))
 
@@ -204,6 +214,8 @@ def _mj_mean(*args: object) -> object:
     values = _expand_args(args)
     if not values:
         raise ValueError("mean requires at least one argument")
+    if len(values) == 1 and isinstance(values[0], np.ndarray):
+        return _maybe_scalar(np.mean(values[0]))
     return _maybe_scalar(np.mean(values, axis=0))
 
 
@@ -211,6 +223,8 @@ def _mj_median(*args: object) -> object:
     values = _expand_args(args)
     if not values:
         raise ValueError("median requires at least one argument")
+    if len(values) == 1 and isinstance(values[0], np.ndarray):
+        return _maybe_scalar(np.median(values[0]))
     return _maybe_scalar(np.median(values, axis=0))
 
 
@@ -246,6 +260,22 @@ def _mj_or(left: object, right: object) -> object:
     return _binary_numpy(np.logical_or, left, right)
 
 
+def _mj_lazy_and(left: object, right: Callable[[], object]) -> object:
+    if _is_array_like(left):
+        return _mj_and(left, right())
+    if not left:
+        return False
+    return _maybe_bool(_mj_and(left, right()))
+
+
+def _mj_lazy_or(left: object, right: Callable[[], object]) -> object:
+    if _is_array_like(left):
+        return _mj_or(left, right())
+    if left:
+        return True
+    return _maybe_bool(_mj_or(left, right()))
+
+
 def _mj_xor(left: object, right: object) -> object:
     return _binary_numpy(np.logical_xor, left, right)
 
@@ -256,6 +286,18 @@ def _mj_not(value: object) -> object:
 
 def _mj_where(condition: object, true_value: object, false_value: object) -> object:
     return _maybe_scalar(np.where(condition, true_value, false_value))
+
+
+def _mj_lazy_where(
+    condition: object,
+    true_value: Callable[[], object],
+    false_value: Callable[[], object],
+) -> object:
+    if _is_array_like(condition):
+        return _mj_where(condition, true_value(), false_value())
+    if condition:
+        return true_value()
+    return false_value()
 
 
 HELPER_FUNCTIONS = {
@@ -269,6 +311,9 @@ HELPER_FUNCTIONS = {
     "_mj_max": _mj_max,
     "_mj_larger": _mj_larger,
     "_mj_larger_eq": _mj_larger_eq,
+    "_mj_lazy_and": _mj_lazy_and,
+    "_mj_lazy_or": _mj_lazy_or,
+    "_mj_lazy_where": _mj_lazy_where,
     "_mj_log": _mj_log,
     "_mj_mean": _mj_mean,
     "_mj_median": _mj_median,
@@ -298,6 +343,9 @@ __all__ = [
     "_mj_ifnull",
     "_mj_larger",
     "_mj_larger_eq",
+    "_mj_lazy_and",
+    "_mj_lazy_or",
+    "_mj_lazy_where",
     "_mj_log",
     "_mj_max",
     "_mj_mean",
