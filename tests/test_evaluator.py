@@ -125,7 +125,7 @@ def test_binary_operations_with_inputs(fn_name, left, right, inputs, scope, expe
 )
 def test_unary_operations(fn_name, operand, value, expected):
     expr = {"result": op(fn_name, operand)}
-    inputs = list(value.keys()) if isinstance(value, Mapping) else []
+    inputs: list[str] = [str(k) for k in value] if isinstance(value, Mapping) else []
     evaluator = build_evaluator(expressions=expr, inputs=inputs, target="result")
     scope = value or {}
     assert evaluator(scope) == pytest.approx(expected)
@@ -370,7 +370,7 @@ def test_input_validation_requires_mapping():
     expressions = {"res": symbol("x")}
     evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
     with pytest.raises(InputValidationError):
-        evaluator([1, 2, 3])  # type: ignore[arg-type]
+        evaluator([1, 2, 3])  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 def test_input_validation_missing_keys():
