@@ -609,8 +609,16 @@ def test_relational_logical_and_conditional_nodes():
             "type": "OperatorNode",
             "fn": "and",
             "args": [
-                {"type": "OperatorNode", "fn": "largerEq", "args": [symbol("x"), const(10)]},
-                {"type": "OperatorNode", "fn": "smaller", "args": [symbol("x"), const(20)]},
+                {
+                    "type": "OperatorNode",
+                    "fn": "largerEq",
+                    "args": [symbol("x"), const(10)],
+                },
+                {
+                    "type": "OperatorNode",
+                    "fn": "smaller",
+                    "args": [symbol("x"), const(20)],
+                },
             ],
         },
         "res": {
@@ -629,13 +637,82 @@ def test_relational_and_conditional_nodes_vectorize():
     expressions = {
         "res": {
             "type": "ConditionalNode",
-            "condition": {"type": "OperatorNode", "fn": "larger", "args": [symbol("x"), const(0)]},
+            "condition": {
+                "type": "OperatorNode",
+                "fn": "larger",
+                "args": [symbol("x"), const(0)],
+            },
             "trueExpr": symbol("x"),
             "falseExpr": const(0),
         },
     }
     evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
     np.testing.assert_allclose(evaluator({"x": np.array([-2, 3, -1, 4])}), [0, 3, 0, 4])
+
+
+def test_mean_and_median_reduce_single_numpy_array():
+    expressions = {
+        "mean": func("mean", symbol("x")),
+        "median": func("median", symbol("x")),
+        "res": array(symbol("mean"), symbol("median")),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    np.testing.assert_allclose(evaluator({"x": np.array([2, 4, 9])}), [5, 4])
+
+
+def test_scalar_and_short_circuits_right_operand():
+    expressions = {
+        "res": op(
+            "and",
+            op("unequal", symbol("x"), const(0)),
+            op("larger", op("divide", const(1), symbol("x")), const(1)),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    assert evaluator({"x": 0}) is False
+    assert evaluator({"x": 0.5}) is True
+
+
+def test_scalar_or_short_circuits_right_operand():
+    expressions = {
+        "res": op(
+            "or",
+            op("equal", symbol("x"), const(0)),
+            op("larger", op("divide", const(1), symbol("x")), const(1)),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    assert evaluator({"x": 0}) is True
+    assert evaluator({"x": 2}) is False
+
+
+def test_scalar_conditional_short_circuits_dead_branch():
+    expressions = {
+        "res": {
+            "type": "ConditionalNode",
+            "condition": op("unequal", symbol("x"), const(0)),
+            "trueExpr": op("divide", const(1), symbol("x")),
+            "falseExpr": const(0),
+        },
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    assert evaluator({"x": 0}) == 0
+    assert evaluator({"x": 2}) == pytest.approx(0.5)
+
+
+def test_vector_logical_nodes_still_vectorize():
+    expressions = {
+        "res": op(
+            "and",
+            op("larger", symbol("x"), const(0)),
+            op("smaller", symbol("x"), const(5)),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    np.testing.assert_array_equal(
+        evaluator({"x": np.array([-1, 3, 8])}),
+        np.array([False, True, False]),
+    )
 
 
 def test_input_payload_missing_key():
