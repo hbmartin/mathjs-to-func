@@ -505,7 +505,7 @@ def test_array_node_requires_items():
 
 
 def test_function_requires_supported_name():
-    expressions = {"res": func("sqrt", const(4))}
+    expressions = {"res": func("distance", const(4))}
     with pytest.raises(InvalidNodeError):
         build_evaluator(expressions=expressions, inputs=[], target="res")
 
@@ -539,7 +539,7 @@ def test_unary_requires_supported_fn():
 
 
 def test_binary_requires_supported_fn():
-    expressions = {"res": op("and", const(1), const(2))}
+    expressions = {"res": op("bitAnd", const(1), const(2))}
     with pytest.raises(InvalidNodeError):
         build_evaluator(expressions=expressions, inputs=[], target="res")
 
@@ -570,6 +570,72 @@ def test_builder_handles_mathjs_function_reference():
     }
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
     assert evaluator({}) == 2
+
+
+def test_builder_handles_serialized_mathjs_symbol_function_reference():
+    expressions = {
+        "res": {
+            "mathjs": "FunctionNode",
+            "fn": {"mathjs": "SymbolNode", "name": "sqrt"},
+            "args": [{"mathjs": "ConstantNode", "value": "81", "valueType": "number"}],
+        },
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+    assert evaluator({}) == 9
+
+
+def test_broad_scalar_functions():
+    expressions = {
+        "res": func(
+            "sum",
+            func("abs", const(-4)),
+            func("sqrt", const(16)),
+            func("log", func("exp", const(3))),
+            func("round", const(2.6)),
+            func("floor", const(2.9)),
+            func("ceil", const(2.1)),
+            func("sign", const(-12)),
+            func("mean", array(const(2), const(4), const(6))),
+            func("median", array(const(9), const(1), const(5))),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+    assert evaluator({}) == pytest.approx(27)
+
+
+def test_relational_logical_and_conditional_nodes():
+    expressions = {
+        "condition": {
+            "type": "OperatorNode",
+            "fn": "and",
+            "args": [
+                {"type": "OperatorNode", "fn": "largerEq", "args": [symbol("x"), const(10)]},
+                {"type": "OperatorNode", "fn": "smaller", "args": [symbol("x"), const(20)]},
+            ],
+        },
+        "res": {
+            "type": "ConditionalNode",
+            "condition": symbol("condition"),
+            "trueExpr": const(1),
+            "falseExpr": const(0),
+        },
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    assert evaluator({"x": 12}) == 1
+    assert evaluator({"x": 25}) == 0
+
+
+def test_relational_and_conditional_nodes_vectorize():
+    expressions = {
+        "res": {
+            "type": "ConditionalNode",
+            "condition": {"type": "OperatorNode", "fn": "larger", "args": [symbol("x"), const(0)]},
+            "trueExpr": symbol("x"),
+            "falseExpr": const(0),
+        },
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    np.testing.assert_allclose(evaluator({"x": np.array([-2, 3, -1, 4])}), [0, 3, 0, 4])
 
 
 def test_input_payload_missing_key():

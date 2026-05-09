@@ -216,6 +216,12 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         fn: Any,
         child: Mapping[str, Any],
     ) -> ast.expr:
+        if fn == "not":
+            return ast.Call(
+                func=ast.Name(id="_mj_not", ctx=ast.Load()),
+                args=[self.visit(child)],
+                keywords=[],
+            )
         if fn not in {"unaryMinus", "unaryPlus"}:
             raise InvalidNodeError(
                 f"Unsupported unary operator: {fn!r}",
@@ -247,6 +253,33 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 op = ast.Pow()
             case "mod":
                 op = ast.Mod()
+            case (
+                "larger"
+                | "largerEq"
+                | "smaller"
+                | "smallerEq"
+                | "equal"
+                | "unequal"
+                | "and"
+                | "or"
+                | "xor"
+            ):
+                helper_name = {
+                    "larger": "_mj_larger",
+                    "largerEq": "_mj_larger_eq",
+                    "smaller": "_mj_smaller",
+                    "smallerEq": "_mj_smaller_eq",
+                    "equal": "_mj_equal",
+                    "unequal": "_mj_unequal",
+                    "and": "_mj_and",
+                    "or": "_mj_or",
+                    "xor": "_mj_xor",
+                }[fn]
+                return ast.Call(
+                    func=ast.Name(id=helper_name, ctx=ast.Load()),
+                    args=[left, right],
+                    keywords=[],
+                )
             case _:
                 raise InvalidNodeError(
                     f"Unsupported binary operator: {fn!r}",
@@ -294,7 +327,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 node=node,
             )
 
-        if normalized in {"min", "max", "sum"} and not call_args:
+        if normalized in {"min", "max", "sum", "mean", "median"} and not call_args:
             raise InvalidNodeError(
                 f"{normalized} requires at least one argument",
                 expression=self.expression_name,
@@ -303,6 +336,28 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         return ast.Call(
             func=ast.Name(id=helper_name, ctx=ast.Load()),
             args=call_args,
+            keywords=[],
+        )
+
+    def visit_ConditionalNode(self, node: Mapping[str, Any]) -> ast.expr:
+        condition = self._ensure_mapping(
+            node.get("condition"),
+            node=node,
+            message="ConditionalNode missing condition",
+        )
+        true_expr = self._ensure_mapping(
+            node.get("trueExpr"),
+            node=node,
+            message="ConditionalNode missing true expression",
+        )
+        false_expr = self._ensure_mapping(
+            node.get("falseExpr"),
+            node=node,
+            message="ConditionalNode missing false expression",
+        )
+        return ast.Call(
+            func=ast.Name(id="_mj_where", ctx=ast.Load()),
+            args=[self.visit(condition), self.visit(true_expr), self.visit(false_expr)],
             keywords=[],
         )
 
@@ -371,11 +426,6 @@ class SymbolDependencyCollector(MathJsAstVisitor[set[str]]):
 
     def visit_FunctionNode(self, node: Mapping[str, Any]) -> set[str]:
         result: set[str] = set()
-        raw_fn = node.get("fn")
-        if isinstance(raw_fn, AbcMapping):
-            fn_type = raw_fn.get("type") or raw_fn.get("mathjs")
-            if isinstance(fn_type, str):
-                result.update(self.visit(raw_fn))
         args = node.get("args") or []
         args_list = self._ensure_iterable(
             args,
@@ -406,6 +456,17 @@ class SymbolDependencyCollector(MathJsAstVisitor[set[str]]):
                 message="ArrayNode element must be object",
             )
             result.update(self.visit(element))
+        return result
+
+    def visit_ConditionalNode(self, node: Mapping[str, Any]) -> set[str]:
+        result: set[str] = set()
+        for key, message in (
+            ("condition", "ConditionalNode missing condition"),
+            ("trueExpr", "ConditionalNode missing true expression"),
+            ("falseExpr", "ConditionalNode missing false expression"),
+        ):
+            child = self._ensure_mapping(node.get(key), node=node, message=message)
+            result.update(self.visit(child))
         return result
 
 

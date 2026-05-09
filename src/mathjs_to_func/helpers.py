@@ -11,8 +11,18 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
 HELPER_NAME_MAP = {
+    "abs": "_mj_abs",
+    "ceil": "_mj_ceil",
+    "exp": "_mj_exp",
+    "floor": "_mj_floor",
+    "log": "_mj_log",
+    "mean": "_mj_mean",
+    "median": "_mj_median",
     "min": "_mj_min",
     "max": "_mj_max",
+    "round": "_mj_round",
+    "sign": "_mj_sign",
+    "sqrt": "_mj_sqrt",
     "sum": "_mj_sum",
     "ifnull": "_mj_ifnull",
 }
@@ -31,6 +41,18 @@ def _maybe_scalar(value: object) -> object:
     if isinstance(value, np.ndarray) and value.ndim == 0:
         return value.item()
     return value
+
+
+def _unary_numpy(func: Callable[[object], object], value: object) -> object:
+    return _maybe_scalar(func(value))
+
+
+def _binary_numpy(
+    func: Callable[[object, object], object],
+    left: object,
+    right: object,
+) -> object:
+    return _maybe_scalar(func(left, right))
 
 
 def _elementwise_reduce(
@@ -146,18 +168,150 @@ def _mj_ifnull(value: object, fallback: object) -> object:
     return value
 
 
+def _mj_abs(value: object) -> object:
+    return _unary_numpy(np.abs, value)
+
+
+def _mj_sqrt(value: object) -> object:
+    return _unary_numpy(np.sqrt, value)
+
+
+def _mj_log(value: object) -> object:
+    return _unary_numpy(np.log, value)
+
+
+def _mj_exp(value: object) -> object:
+    return _unary_numpy(np.exp, value)
+
+
+def _mj_round(value: object, decimals: object = 0) -> object:
+    return _maybe_scalar(np.round(value, int(decimals)))  # type: ignore[arg-type]
+
+
+def _mj_floor(value: object) -> object:
+    return _unary_numpy(np.floor, value)
+
+
+def _mj_ceil(value: object) -> object:
+    return _unary_numpy(np.ceil, value)
+
+
+def _mj_sign(value: object) -> object:
+    return _unary_numpy(np.sign, value)
+
+
+def _mj_mean(*args: object) -> object:
+    values = _expand_args(args)
+    if not values:
+        raise ValueError("mean requires at least one argument")
+    return _maybe_scalar(np.mean(values, axis=0))
+
+
+def _mj_median(*args: object) -> object:
+    values = _expand_args(args)
+    if not values:
+        raise ValueError("median requires at least one argument")
+    return _maybe_scalar(np.median(values, axis=0))
+
+
+def _mj_larger(left: object, right: object) -> object:
+    return _binary_numpy(np.greater, left, right)
+
+
+def _mj_larger_eq(left: object, right: object) -> object:
+    return _binary_numpy(np.greater_equal, left, right)
+
+
+def _mj_smaller(left: object, right: object) -> object:
+    return _binary_numpy(np.less, left, right)
+
+
+def _mj_smaller_eq(left: object, right: object) -> object:
+    return _binary_numpy(np.less_equal, left, right)
+
+
+def _mj_equal(left: object, right: object) -> object:
+    return _binary_numpy(np.equal, left, right)
+
+
+def _mj_unequal(left: object, right: object) -> object:
+    return _binary_numpy(np.not_equal, left, right)
+
+
+def _mj_and(left: object, right: object) -> object:
+    return _binary_numpy(np.logical_and, left, right)
+
+
+def _mj_or(left: object, right: object) -> object:
+    return _binary_numpy(np.logical_or, left, right)
+
+
+def _mj_xor(left: object, right: object) -> object:
+    return _binary_numpy(np.logical_xor, left, right)
+
+
+def _mj_not(value: object) -> object:
+    return _unary_numpy(np.logical_not, value)
+
+
+def _mj_where(condition: object, true_value: object, false_value: object) -> object:
+    return _maybe_scalar(np.where(condition, true_value, false_value))
+
+
 HELPER_FUNCTIONS = {
+    "_mj_abs": _mj_abs,
+    "_mj_and": _mj_and,
+    "_mj_ceil": _mj_ceil,
+    "_mj_equal": _mj_equal,
+    "_mj_exp": _mj_exp,
+    "_mj_floor": _mj_floor,
     "_mj_min": _mj_min,
     "_mj_max": _mj_max,
+    "_mj_larger": _mj_larger,
+    "_mj_larger_eq": _mj_larger_eq,
+    "_mj_log": _mj_log,
+    "_mj_mean": _mj_mean,
+    "_mj_median": _mj_median,
+    "_mj_not": _mj_not,
+    "_mj_or": _mj_or,
+    "_mj_round": _mj_round,
+    "_mj_sign": _mj_sign,
+    "_mj_smaller": _mj_smaller,
+    "_mj_smaller_eq": _mj_smaller_eq,
+    "_mj_sqrt": _mj_sqrt,
     "_mj_sum": _mj_sum,
     "_mj_ifnull": _mj_ifnull,
+    "_mj_unequal": _mj_unequal,
+    "_mj_where": _mj_where,
+    "_mj_xor": _mj_xor,
 }
 
 __all__ = [
     "HELPER_FUNCTIONS",
     "HELPER_NAME_MAP",
+    "_mj_abs",
+    "_mj_and",
+    "_mj_ceil",
+    "_mj_equal",
+    "_mj_exp",
+    "_mj_floor",
     "_mj_ifnull",
+    "_mj_larger",
+    "_mj_larger_eq",
+    "_mj_log",
     "_mj_max",
+    "_mj_mean",
+    "_mj_median",
     "_mj_min",
+    "_mj_not",
+    "_mj_or",
+    "_mj_round",
+    "_mj_sign",
+    "_mj_smaller",
+    "_mj_smaller_eq",
+    "_mj_sqrt",
     "_mj_sum",
+    "_mj_unequal",
+    "_mj_where",
+    "_mj_xor",
 ]
