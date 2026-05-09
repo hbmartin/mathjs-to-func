@@ -211,20 +211,24 @@ def _mj_sign(value: object) -> object:
 
 
 def _mj_mean(*args: object) -> object:
+    if len(args) == 1 and _is_array_like(args[0]):
+        if len(args[0]) == 0:
+            raise ValueError("mean requires at least one argument")
+        return _maybe_scalar(np.mean(args[0]))
     values = _expand_args(args)
     if not values:
         raise ValueError("mean requires at least one argument")
-    if len(args) == 1 and _is_array_like(args[0]):
-        return _maybe_scalar(np.mean(args[0]))
     return _maybe_scalar(np.mean(values, axis=0))
 
 
 def _mj_median(*args: object) -> object:
+    if len(args) == 1 and _is_array_like(args[0]):
+        if len(args[0]) == 0:
+            raise ValueError("median requires at least one argument")
+        return _maybe_scalar(np.median(args[0]))
     values = _expand_args(args)
     if not values:
         raise ValueError("median requires at least one argument")
-    if len(args) == 1 and _is_array_like(args[0]):
-        return _maybe_scalar(np.median(args[0]))
     return _maybe_scalar(np.median(values, axis=0))
 
 
@@ -269,7 +273,7 @@ def _mj_lazy_and(left: object, right: Callable[[], object]) -> object:
         except ArithmeticError:
             return False
         if _is_array_like(right_value):
-            return _mj_and(left, right_value)
+            return _mj_and(False if left is None else left, right_value)
         return False
     return _maybe_bool(_mj_and(left, right()))
 
