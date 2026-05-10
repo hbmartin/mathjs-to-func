@@ -409,7 +409,7 @@ def _mj_relational(
         try:
             compare = _RELATIONAL_HELPERS[conditional]
         except KeyError as exc:
-            msg = f"Unsupported relational conditional: {conditional}"
+            msg = f"Unsupported relational conditional: {conditional!r}"
             raise ValueError(msg) from exc
         right = terms[index + 1]()
         comparison = compare(left, right)
