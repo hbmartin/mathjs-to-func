@@ -33,6 +33,49 @@ MATHJS_BUILTIN_SYMBOLS = {
     "undefined": None,
 }
 
+UNARY_OPERATOR_FUNCTIONS = {"not", "unaryMinus", "unaryPlus"}
+BINARY_OPERATOR_FUNCTIONS = {
+    "add",
+    "subtract",
+    "multiply",
+    "divide",
+    "pow",
+    "mod",
+    "nullish",
+    "and",
+    "or",
+    "larger",
+    "largerEq",
+    "smaller",
+    "smallerEq",
+    "equal",
+    "unequal",
+    "xor",
+}
+MIN_ARITY_FUNCTIONS = {
+    "gcd",
+    "hypot",
+    "lcm",
+    "max",
+    "mean",
+    "median",
+    "min",
+    "mode",
+    "sum",
+    "std",
+    "variance",
+}
+EXACT_ARITY_FUNCTIONS = {
+    "atan2": 2,
+    "clamp": 3,
+    "combinations": 2,
+    "ifnull": 2,
+}
+MAX_ARITY_FUNCTIONS = {
+    "permutations": 2,
+    "round": 2,
+}
+
 
 def ensure_identifier(name: str, *, expression: str | None) -> str:
     """Validate and return a safe identifier for generated expressions."""
@@ -333,7 +376,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 )
         return ast.BinOp(left=left, op=op, right=right)
 
-    def visit_FunctionNode(self, node: Mapping[str, Any]) -> ast.expr:
+    def _function_name(self, node: Mapping[str, Any]) -> str:
         raw_fn = node.get("fn")
         fn_name = raw_fn.get("name") if isinstance(raw_fn, AbcMapping) else raw_fn
         if not isinstance(fn_name, str):
@@ -342,7 +385,89 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 expression=self.expression_name,
                 node=node,
             )
-        normalized = fn_name.strip()
+        return fn_name.strip()
+
+    def _function_arg_nodes(self, node: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+        args = node.get("args") or []
+        args_list = self._ensure_iterable(
+            args,
+            node=node,
+            message="FunctionNode args must be iterable",
+        )
+        return [
+            self._ensure_mapping(
+                arg,
+                node=node,
+                message="FunctionNode argument must be object",
+            )
+            for arg in args_list
+        ]
+
+    def _visit_operator_function_alias(
+        self,
+        normalized: str,
+        arg_nodes: list[Mapping[str, Any]],
+        *,
+        node: Mapping[str, Any],
+    ) -> ast.expr | None:
+        if normalized in UNARY_OPERATOR_FUNCTIONS:
+            if len(arg_nodes) != 1:
+                raise InvalidNodeError(
+                    f"{normalized} expects exactly one argument",
+                    expression=self.expression_name,
+                    node=node,
+                )
+            return self._visit_unary_operator(normalized, arg_nodes[0])
+
+        if normalized in BINARY_OPERATOR_FUNCTIONS:
+            if len(arg_nodes) != 2:
+                raise InvalidNodeError(
+                    f"{normalized} expects exactly two arguments",
+                    expression=self.expression_name,
+                    node=node,
+                )
+            return self._visit_binary_operator(normalized, arg_nodes[0], arg_nodes[1])
+        return None
+
+    def _validate_function_arity(
+        self,
+        normalized: str,
+        arg_count: int,
+        *,
+        node: Mapping[str, Any],
+    ) -> None:
+        if normalized in EXACT_ARITY_FUNCTIONS:
+            expected = EXACT_ARITY_FUNCTIONS[normalized]
+            if arg_count != expected:
+                raise InvalidNodeError(
+                    f"{normalized} expects exactly {expected} arguments",
+                    expression=self.expression_name,
+                    node=node,
+                )
+
+        max_arity = MAX_ARITY_FUNCTIONS.get(normalized)
+        if max_arity is not None and arg_count > max_arity:
+            raise InvalidNodeError(
+                f"{normalized} expects at most {max_arity} arguments",
+                expression=self.expression_name,
+                node=node,
+            )
+
+        if normalized in MIN_ARITY_FUNCTIONS and arg_count == 0:
+            raise InvalidNodeError(
+                f"{normalized} requires at least one argument",
+                expression=self.expression_name,
+                node=node,
+            )
+
+    def visit_FunctionNode(self, node: Mapping[str, Any]) -> ast.expr:
+        normalized = self._function_name(node)
+        arg_nodes = self._function_arg_nodes(node)
+
+        alias = self._visit_operator_function_alias(normalized, arg_nodes, node=node)
+        if alias is not None:
+            return alias
+
         helper_name = self.helper_names.get(normalized)
         if helper_name is None:
             raise InvalidNodeError(
@@ -350,39 +475,142 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 expression=self.expression_name,
                 node=node,
             )
-        args = node.get("args") or []
-        args_list = self._ensure_iterable(
-            args,
-            node=node,
-            message="FunctionNode args must be iterable",
-        )
-        call_args = []
-        for arg in args_list:
-            child = self._ensure_mapping(
-                arg,
-                node=node,
-                message="FunctionNode argument must be object",
-            )
-            call_args.append(self.visit(child))
 
-        if normalized in {"ifnull", "nullish"} and len(call_args) != 2:
+        self._validate_function_arity(normalized, len(arg_nodes), node=node)
+        return ast.Call(
+            func=ast.Name(id=helper_name, ctx=ast.Load()),
+            args=[self.visit(arg) for arg in arg_nodes],
+            keywords=[],
+        )
+
+    def _build_range_call(
+        self,
+        node: Mapping[str, Any],
+        *,
+        helper_name: str,
+    ) -> ast.Call:
+        start = self._ensure_mapping(
+            node.get("start"),
+            node=node,
+            message="RangeNode missing start",
+        )
+        end = self._ensure_mapping(
+            node.get("end"),
+            node=node,
+            message="RangeNode missing end",
+        )
+        args = [self.visit(start), self.visit(end)]
+        step = node.get("step")
+        if step is not None:
+            step_node = self._ensure_mapping(
+                step,
+                node=node,
+                message="RangeNode step must be object",
+            )
+            args.append(self.visit(step_node))
+        return ast.Call(
+            func=ast.Name(id=helper_name, ctx=ast.Load()),
+            args=args,
+            keywords=[],
+        )
+
+    def visit_RangeNode(self, node: Mapping[str, Any]) -> ast.expr:
+        return self._build_range_call(node, helper_name="_mj_range")
+
+    def _build_index_dimensions(self, node: Mapping[str, Any]) -> list[ast.expr]:
+        if node.get("dotNotation") is True:
             raise InvalidNodeError(
-                f"{normalized} expects exactly two arguments",
+                "AccessorNode dot notation is not supported",
                 expression=self.expression_name,
                 node=node,
             )
+        dimensions = self._ensure_iterable(
+            node.get("dimensions"),
+            node=node,
+            message="IndexNode dimensions must be iterable",
+        )
+        result: list[ast.expr] = []
+        for dimension in dimensions:
+            dimension_node = self._ensure_mapping(
+                dimension,
+                node=node,
+                message="IndexNode dimension must be object",
+            )
+            if _extract_type(dimension_node) == "RangeNode":
+                result.append(
+                    self._build_range_call(
+                        dimension_node,
+                        helper_name="_mj_index_range",
+                    ),
+                )
+            else:
+                result.append(
+                    ast.Call(
+                        func=ast.Name(id="_mj_index", ctx=ast.Load()),
+                        args=[self.visit(dimension_node)],
+                        keywords=[],
+                    ),
+                )
+        return result
 
-        if normalized in {"min", "max", "sum", "mean", "median"} and not call_args:
+    def visit_IndexNode(self, node: Mapping[str, Any]) -> ast.expr:
+        raise InvalidNodeError(
+            "IndexNode is only supported inside AccessorNode",
+            expression=self.expression_name,
+            node=node,
+        )
+
+    def visit_AccessorNode(self, node: Mapping[str, Any]) -> ast.expr:
+        object_node = self._ensure_mapping(
+            node.get("object"),
+            node=node,
+            message="AccessorNode missing object",
+        )
+        index_node = self._ensure_mapping(
+            node.get("index"),
+            node=node,
+            message="AccessorNode missing index",
+        )
+        if _extract_type(index_node) != "IndexNode":
             raise InvalidNodeError(
-                f"{normalized} requires at least one argument",
+                "AccessorNode index must be IndexNode",
                 expression=self.expression_name,
                 node=node,
             )
         return ast.Call(
-            func=ast.Name(id=helper_name, ctx=ast.Load()),
-            args=call_args,
+            func=ast.Name(id="_mj_access", ctx=ast.Load()),
+            args=[
+                self.visit(object_node),
+                *self._build_index_dimensions(index_node),
+            ],
             keywords=[],
         )
+
+    def visit_ObjectNode(self, node: Mapping[str, Any]) -> ast.expr:
+        properties = node.get("properties")
+        if not isinstance(properties, AbcMapping):
+            raise InvalidNodeError(
+                "ObjectNode properties must be mapping",
+                expression=self.expression_name,
+                node=node,
+            )
+        keys: list[ast.expr | None] = []
+        values: list[ast.expr] = []
+        for key, value in properties.items():
+            if not isinstance(key, str):
+                raise InvalidNodeError(
+                    "ObjectNode property keys must be strings",
+                    expression=self.expression_name,
+                    node=node,
+                )
+            value_node = self._ensure_mapping(
+                value,
+                node=node,
+                message="ObjectNode property value must be object",
+            )
+            keys.append(ast.Constant(value=key))
+            values.append(self.visit(value_node))
+        return ast.Dict(keys=keys, values=values)
 
     def visit_RelationalNode(self, node: Mapping[str, Any]) -> ast.expr:
         conditionals = self._ensure_iterable(
@@ -560,6 +788,74 @@ class SymbolDependencyCollector(MathJsAstVisitor[set[str]]):
                 message="ArrayNode element must be object",
             )
             result.update(self.visit(element))
+        return result
+
+    def visit_RangeNode(self, node: Mapping[str, Any]) -> set[str]:
+        result: set[str] = set()
+        for key, message in (
+            ("start", "RangeNode missing start"),
+            ("end", "RangeNode missing end"),
+        ):
+            child = self._ensure_mapping(node.get(key), node=node, message=message)
+            result.update(self.visit(child))
+        step = node.get("step")
+        if step is not None:
+            child = self._ensure_mapping(
+                step,
+                node=node,
+                message="RangeNode step must be object",
+            )
+            result.update(self.visit(child))
+        return result
+
+    def visit_IndexNode(self, node: Mapping[str, Any]) -> set[str]:
+        dimensions = self._ensure_iterable(
+            node.get("dimensions"),
+            node=node,
+            message="IndexNode dimensions must be iterable",
+        )
+        result: set[str] = set()
+        for dimension in dimensions:
+            child = self._ensure_mapping(
+                dimension,
+                node=node,
+                message="IndexNode dimension must be object",
+            )
+            result.update(self.visit(child))
+        return result
+
+    def visit_AccessorNode(self, node: Mapping[str, Any]) -> set[str]:
+        result: set[str] = set()
+        object_node = self._ensure_mapping(
+            node.get("object"),
+            node=node,
+            message="AccessorNode missing object",
+        )
+        index_node = self._ensure_mapping(
+            node.get("index"),
+            node=node,
+            message="AccessorNode missing index",
+        )
+        result.update(self.visit(object_node))
+        result.update(self.visit(index_node))
+        return result
+
+    def visit_ObjectNode(self, node: Mapping[str, Any]) -> set[str]:
+        properties = node.get("properties")
+        if not isinstance(properties, AbcMapping):
+            raise InvalidNodeError(
+                "ObjectNode properties must be mapping",
+                expression=self.expression_name,
+                node=node,
+            )
+        result: set[str] = set()
+        for value in properties.values():
+            child = self._ensure_mapping(
+                value,
+                node=node,
+                message="ObjectNode property value must be object",
+            )
+            result.update(self.visit(child))
         return result
 
     def visit_ConditionalNode(self, node: Mapping[str, Any]) -> set[str]:

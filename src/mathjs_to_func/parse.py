@@ -88,6 +88,46 @@ class ArrayNode(_MathjsBaseModel):
     items: list[MathjsExpression] = Field(default_factory=list)
 
 
+class RangeNode(_MathjsBaseModel):
+    type: Literal["RangeNode"] = Field(
+        default="RangeNode",
+        validation_alias=AliasChoices("type", "mathjs"),
+        serialization_alias="type",
+    )
+    start: MathjsExpression
+    end: MathjsExpression
+    step: MathjsExpression | None = None
+
+
+class IndexNode(_MathjsBaseModel):
+    type: Literal["IndexNode"] = Field(
+        default="IndexNode",
+        validation_alias=AliasChoices("type", "mathjs"),
+        serialization_alias="type",
+    )
+    dimensions: list[MathjsExpression] = Field(default_factory=list)
+    dotNotation: bool | None = None
+
+
+class AccessorNode(_MathjsBaseModel):
+    type: Literal["AccessorNode"] = Field(
+        default="AccessorNode",
+        validation_alias=AliasChoices("type", "mathjs"),
+        serialization_alias="type",
+    )
+    object: MathjsExpression
+    index: IndexNode
+
+
+class ObjectNode(_MathjsBaseModel):
+    type: Literal["ObjectNode"] = Field(
+        default="ObjectNode",
+        validation_alias=AliasChoices("type", "mathjs"),
+        serialization_alias="type",
+    )
+    properties: dict[str, MathjsExpression] = Field(default_factory=dict)
+
+
 class ConditionalNode(_MathjsBaseModel):
     type: Literal["ConditionalNode"] = Field(
         default="ConditionalNode",
@@ -118,6 +158,10 @@ MathjsExpression = (
     | OperatorNode
     | FunctionNode
     | ArrayNode
+    | RangeNode
+    | IndexNode
+    | AccessorNode
+    | ObjectNode
     | ConditionalNode
     | RelationalNode
 )
@@ -130,6 +174,10 @@ for model in (
     OperatorNode,
     FunctionNode,
     ArrayNode,
+    RangeNode,
+    IndexNode,
+    AccessorNode,
+    ObjectNode,
     ConditionalNode,
     RelationalNode,
 ):

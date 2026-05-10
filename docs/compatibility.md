@@ -16,42 +16,44 @@ Primary math.js references:
 | `ConstantNode` | Supported | `number`, `boolean`, and `null`. String constants are not supported. |
 | `SymbolNode` | Supported | Resolves inputs, other expression ids, and common built-in constants. Inputs/expressions override built-ins. |
 | `OperatorNode` | Supported subset | Arithmetic, unary plus/minus, logical, relational, and `nullish`. See operator table below. |
-| `FunctionNode` | Supported subset | Whitelisted numeric/statistical/nullish helpers only. Custom functions and raw argument functions are not supported. |
+| `FunctionNode` | Supported subset | Whitelisted numeric/statistical/nullish helpers plus operator function aliases. Custom functions and raw argument functions are not supported. |
 | `ParenthesisNode` | Supported | Delegates to child content. |
 | `ArrayNode` | Supported | Produces Python lists; helpers convert to NumPy arrays when needed. |
 | `ConditionalNode` | Supported | Scalar branches are lazy. Array conditions evaluate both branches and use NumPy `where`. |
 | `RelationalNode` | Supported | Chained comparisons such as `10 < x <= 50`; scalar comparisons short-circuit. |
-| `AccessorNode` | Not supported | Indexing/property access is intentionally out of scope. |
+| `AccessorNode` | Supported subset | Read-only numeric indexing via `IndexNode`; math.js 1-based indices are translated to Python 0-based indices. Dot/property access is not supported. |
 | `AssignmentNode` | Not supported | Evaluators are pure and do not mutate scope. |
 | `BlockNode` | Not supported | Multi-statement result sets are out of scope. |
 | `FunctionAssignmentNode` | Not supported | User-defined functions are out of scope. |
-| `IndexNode` | Not supported | Related to unsupported accessors/subsets. |
-| `ObjectNode` | Not supported | Object literals are out of scope. |
-| `RangeNode` | Not supported | Ranges are not materialized today. |
+| `IndexNode` | Supported subset | Supported inside `AccessorNode` with scalar numeric dimensions and `RangeNode` dimensions. |
+| `ObjectNode` | Supported | Produces Python dict literals with string keys and supported expression values. |
+| `RangeNode` | Supported | Materializes inclusive ranges via NumPy; optional non-zero step is supported. |
 
 ## Operators
 
 | math.js function name | Status | Notes |
 |-----------------------|--------|-------|
-| `add`, `subtract`, `multiply`, `divide`, `pow`, `mod` | Supported | Uses Python/NumPy arithmetic. |
+| `add`, `subtract`, `multiply`, `divide`, `pow`, `mod` | Supported | Uses Python/NumPy arithmetic. Also accepted in `FunctionNode` form. |
 | `unaryPlus`, `unaryMinus` | Supported | Uses Python unary operators. |
-| `not`, `and`, `or`, `xor` | Supported | Scalar `and`/`or` are lazy; arrays vectorize. |
-| `equal`, `unequal`, `larger`, `largerEq`, `smaller`, `smallerEq` | Supported | Numeric comparisons use math.js-style default tolerances: `relTol=1e-12`, `absTol=1e-15`. |
-| `nullish` | Supported | Operator form lazily evaluates fallback for scalar values. |
+| `not`, `and`, `or`, `xor` | Supported | Scalar `and`/`or` are lazy; arrays vectorize. Also accepted in `FunctionNode` form. |
+| `equal`, `unequal`, `larger`, `largerEq`, `smaller`, `smallerEq` | Supported | Numeric comparisons use math.js-style default tolerances: `relTol=1e-12`, `absTol=1e-15`. Also accepted in `FunctionNode` form. |
+| `nullish` | Supported | Lazily evaluates fallback for scalar values in both operator and `FunctionNode` alias form. |
 | `dotMultiply`, `dotDivide`, `dotPow` | Not supported | NumPy broadcasting covers many array use cases, but math.js dot operator semantics are not separately modeled. |
 | `bitAnd`, `bitOr`, `bitXor`, `bitNot`, shifts | Not supported | Bitwise operators are out of scope. |
-| `factorial`, transpose, percentage postfix | Not supported | These parser operators are not translated today. |
+| Postfix factorial, transpose, percentage postfix | Not supported | These parser operators are not translated today. Function-style `factorial(n)` is supported. |
 | `to`, `in` | Not supported | Units/conversions are out of scope. |
 
 ## Functions
 
 | Function | Status | Notes |
 |----------|--------|-------|
-| `abs`, `ceil`, `exp`, `floor`, `log`, `round`, `sign`, `sqrt` | Supported | Uses NumPy unary helpers. |
-| `min`, `max`, `sum`, `mean`, `median` | Supported | Scalars and arrays are supported. |
+| `abs`, `ceil`, `exp`, `floor`, `log`, `log1p`, `log2`, `log10`, `round`, `sign`, `sqrt`, `cbrt` | Supported | Uses NumPy unary helpers. |
+| `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` | Supported | Uses NumPy trigonometric and hyperbolic helpers. |
+| `hypot`, `clamp`, `factorial`, `gcd`, `lcm`, `combinations`, `permutations` | Supported | Scalars and NumPy-friendly inputs are supported where practical. |
+| `min`, `max`, `sum`, `mean`, `median`, `variance`, `std`, `mode` | Supported | Scalars and arrays are supported. `variance` and `std` use unbiased sample normalization (`ddof=1`). |
 | `ifnull` | Supported | Project helper; treats `None` and `NaN` as nullish. |
-| `nullish` | Supported | Alias for `ifnull` in `FunctionNode` form. |
-| Trigonometry, probability, linear algebra, set, bitwise, unit, complex helper functions | Not supported | Add selectively as use cases appear. |
+| `nullish` | Supported | Alias for the lazy `nullish` operator in `FunctionNode` form. |
+| Probability, linear algebra, set, bitwise, unit, complex helper functions | Not supported | Add selectively as use cases appear. |
 | `evaluate`, `parse`, `simplify`, `derivative`, `resolve`, `import`, `createUnit`, `reviver` | Not supported | Deliberately excluded from generated evaluators for safety and scope control. |
 
 ## Constants
