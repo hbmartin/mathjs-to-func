@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -21,6 +21,7 @@ from .errors import (
 __all__ = [
     "CircularDependencyError",
     "CompiledEvaluator",
+    "CompiledEvaluatorWithSource",
     "ExpressionError",
     "InputValidationError",
     "InvalidNodeError",
@@ -35,9 +36,16 @@ class CompiledEvaluator(Protocol):
 
     __mathjs_required_inputs__: tuple[str, ...]
     __mathjs_evaluation_order__: tuple[str, ...]
-    __mathjs_source__: str
 
-    def __call__(self, scope: Mapping[str, Any], /) -> Any: ...
+    def __call__(self, scope: Mapping[str, Any]) -> Any:  # noqa: ANN401
+        """Evaluate the compiled expression for a scope mapping."""
+        ...
+
+
+class CompiledEvaluatorWithSource(CompiledEvaluator, Protocol):
+    """Compiled evaluator returned when source output is requested."""
+
+    __mathjs_source__: str
 
 
 def _extract_payload(
@@ -67,6 +75,39 @@ def _extract_payload(
     return expressions, inputs, target
 
 
+@overload
+def build_evaluator(
+    expressions: Mapping[str, Any] | None = None,
+    inputs: Iterable[str] | None = None,
+    target: str | None = None,
+    *,
+    payload: Mapping[str, Any] | None = None,
+    include_source: Literal[True],
+) -> CompiledEvaluatorWithSource: ...
+
+
+@overload
+def build_evaluator(
+    expressions: Mapping[str, Any] | None = None,
+    inputs: Iterable[str] | None = None,
+    target: str | None = None,
+    *,
+    payload: Mapping[str, Any] | None = None,
+    include_source: Literal[False] = False,
+) -> CompiledEvaluator: ...
+
+
+@overload
+def build_evaluator(
+    expressions: Mapping[str, Any] | None = None,
+    inputs: Iterable[str] | None = None,
+    target: str | None = None,
+    *,
+    payload: Mapping[str, Any] | None = None,
+    include_source: bool,
+) -> CompiledEvaluator | CompiledEvaluatorWithSource: ...
+
+
 def build_evaluator(
     expressions: Mapping[str, Any] | None = None,
     inputs: Iterable[str] | None = None,
@@ -74,7 +115,7 @@ def build_evaluator(
     *,
     payload: Mapping[str, Any] | None = None,
     include_source: bool = False,
-) -> CompiledEvaluator:
+) -> CompiledEvaluator | CompiledEvaluatorWithSource:
     """Compile math.js expressions into a reusable callable.
 
     Parameters may be supplied directly or via ``payload`` containing the keys
@@ -97,5 +138,6 @@ def build_evaluator(
     if include_source:
         source = ast.unparse(result.module_ast)
         func.__mathjs_source__ = source
+        return cast("CompiledEvaluatorWithSource", func)
 
     return cast("CompiledEvaluator", func)

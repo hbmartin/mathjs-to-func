@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -39,7 +39,7 @@ def _expand_args(args: Sequence[object]) -> list[object]:
 
 def _maybe_scalar(value: object) -> object:
     if isinstance(value, np.ndarray) and value.ndim == 0:
-        return value.item()  # ty: ignore[no-matching-overload]
+        return cast("Any", value).item()
     return value
 
 
@@ -101,7 +101,7 @@ def _mj_min(*args: object) -> object:
         if len(arrays) == 1:
             return _maybe_scalar(np.min(arrays[0]))
         return _elementwise_reduce(np.minimum, arrays)
-    return min(values)
+    return min(cast("Any", values))
 
 
 def _mj_max(*args: object) -> object:
@@ -125,7 +125,7 @@ def _mj_max(*args: object) -> object:
         if len(arrays) == 1:
             return _maybe_scalar(np.max(arrays[0]))
         return _elementwise_reduce(np.maximum, arrays)
-    return max(values)
+    return max(cast("Any", values))
 
 
 def _mj_sum(*args: object) -> object:
@@ -157,7 +157,7 @@ def _mj_sum(*args: object) -> object:
 
     result = values[0]
     for item in values[1:]:
-        result = result + item  # type: ignore[operator]  # ty: ignore[unsupported-operator]
+        result = cast("Any", result) + item
     return result
 
 
@@ -196,7 +196,7 @@ def _mj_exp(value: object) -> object:
 
 def _mj_round(value: object, decimals: object = 0) -> object:
     return _maybe_scalar(
-        np.round(value, int(decimals)),  # type: ignore[arg-type]  # ty: ignore[no-matching-overload, invalid-argument-type]
+        np.round(cast("Any", value), int(cast("Any", decimals))),
     )
 
 
@@ -306,7 +306,11 @@ def _mj_not(value: object) -> object:
 
 def _mj_where(condition: object, true_value: object, false_value: object) -> object:
     return _maybe_scalar(
-        np.where(np.asarray(condition), np.asarray(true_value), np.asarray(false_value)),
+        np.where(
+            np.asarray(condition),
+            np.asarray(true_value),
+            np.asarray(false_value),
+        ),
     )
 
 
