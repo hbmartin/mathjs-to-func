@@ -52,6 +52,7 @@ build-backend = "uv_build"
 dev = [
     "black>=25.9.0",
     "lizard>=1.22.1",
+    "mutmut>=3.5.0",
     "pydantic>=2.9.2,<3",
     "pyrefly>=0.64.1",
     "pytest>=8.4.2",
@@ -59,6 +60,14 @@ dev = [
     "ruff>=0.14.2",
     "ty>=0.0.1a25",
 ]
+
+[tool.mutmut]
+paths_to_mutate = ["src/mathjs_to_func/"]
+pytest_add_cli_args_test_selection = ["tests/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["mutants"]
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.

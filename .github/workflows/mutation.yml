@@ -1,0 +1,106 @@
+name: Mutation Testing
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**/*.py"
+      - "tests/**/*.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/mutation.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**/*.py"
+      - "tests/**/*.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/mutation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutmut:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      MUTMUT_MAX_CHILDREN: "4"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+
+      - name: Run mutation testing
+        run: uv run mutmut run --max-children "${MUTMUT_MAX_CHILDREN}"
+
+      - name: Summarize mutation results
+        run: |
+          uv run mutmut results --all true | tee mutmut-results.txt
+          uv run python - <<'PY'
+          import os
+          from collections import Counter
+          from pathlib import Path
+
+          bad_statuses = {
+              "survived",
+              "no tests",
+              "timeout",
+              "suspicious",
+              "not checked",
+              "segfault",
+              "check was interrupted by user",
+          }
+          lines = Path("mutmut-results.txt").read_text().splitlines()
+          counts = Counter()
+          bad_results = []
+
+          for line in lines:
+              if not line.strip():
+                  continue
+              _, _, status = line.rpartition(": ")
+              counts[status] += 1
+              if status in bad_statuses:
+                  bad_results.append(line)
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a") as handle:
+              handle.write("### Mutmut results\n\n")
+              for status, count in sorted(counts.items()):
+                  handle.write(f"- {status}: {count}\n")
+              handle.write("\n")
+              if bad_results:
+                  handle.write(
+                      "Mutation testing found mutants that were not killed. "
+                      "See the uploaded mutmut-results artifact for details.\n"
+                  )
+
+          if bad_results:
+              print(
+                  "::warning::Mutation testing found "
+                  f"{len(bad_results)} mutants that were not killed. "
+                  "See the mutmut-results artifact."
+              )
+          PY
+
+      - name: Upload mutation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutmut-results
+          path: |
+            mutmut-results.txt
+            mutants/**/*.meta
+          if-no-files-found: ignore

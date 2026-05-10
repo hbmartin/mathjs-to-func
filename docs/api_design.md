@@ -27,11 +27,14 @@ func, source = build_evaluator(
 
 ## Supported math.js Nodes
 
-- `ConstantNode` (numeric) with `valueType` support (number, boolean).
-- `SymbolNode` (references to inputs/expressions) with regex validation.
-- `OperatorNode` for binary ops (`add`, `subtract`, `multiply`, `divide`, `pow`, `mod`) and unary ops (`unaryPlus`, `unaryMinus`).
+- `ConstantNode` (numeric) with `valueType` support (number, boolean, null).
+- `SymbolNode` (references to inputs/expressions/common math.js constants) with regex validation.
+- `OperatorNode` for binary ops (`add`, `subtract`, `multiply`, `divide`, `pow`, `mod`), unary ops (`unaryPlus`, `unaryMinus`, `not`), logical ops (`and`, `or`, `xor`), relational ops (`larger`, `largerEq`, `smaller`, `smallerEq`, `equal`, `unequal`), and `nullish`.
 - `ParenthesisNode` (delegates to child).
-- `FunctionNode` for whitelisted functions: `min`, `max`, `sum`, `ifnull`.
+- `FunctionNode` for whitelisted functions: `abs`, `ceil`, `exp`, `floor`, `log`, `mean`, `median`, `min`, `max`, `round`, `sign`, `sqrt`, `sum`, `ifnull`, `nullish`.
+- `ArrayNode` for list literals.
+- `ConditionalNode` for lazy ternary expressions.
+- `RelationalNode` for chained comparisons.
 
 ## Errors
 

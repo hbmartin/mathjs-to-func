@@ -7,13 +7,14 @@
 [![CI](https://github.com/hbmartin/mathjs-to-func/actions/workflows/ci.yml/badge.svg)](https://github.com/hbmartin/mathjs-to-func/actions/workflows/ci.yml)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hbmartin/mathjs-to-func)
 
-A tiny Python library that compiles serialized [math.js](https://mathjs.org/) expression trees into fast, reusable Python callables. The generated function respects dependency ordering, validates inputs, and mirrors a subset of math.js operators (`+`, `-`, `*`, `/`, `^`, `%`, unary plus/minus) and functions (`min`, `max`, `sum`, `ifnull`).
+A tiny Python library that compiles serialized [math.js](https://mathjs.org/) expression trees into fast, reusable Python callables. The generated function respects dependency ordering, validates inputs, and mirrors a practical subset of math.js operators, constants, comparisons, conditionals, and numeric functions.
 
 ## Key Features
 - Execute without reparsing or repeatedly walking the JSON graph.
 - Detect dependency cycles and missing identifiers early.
 - Keep execution sandboxed by compiling a controlled Python AST.
 - Work well with scalars or NumPy arrays for vectorised workloads.
+- Resolve common math.js constants like `pi`, `e`, `tau`, `NaN`, and `Infinity`.
 
 ## Installation
 
@@ -88,13 +89,17 @@ The returned callable always expects a single mapping argument with the provided
 | Node                     | Notes |
 |-------------------------|-------|
 | `ConstantNode`          | numeric (`number`), boolean, or `null` literals |
-| `SymbolNode`            | validated identifiers; must be alphanumeric/underscore, starting with a letter/underscore |
-| `OperatorNode`          | `add`, `subtract`, `multiply`, `divide`, `pow`, `mod`, unary `unaryPlus`, `unaryMinus` |
-| `FunctionNode`          | `min`, `max`, `sum`, `ifnull` |
+| `SymbolNode`            | inputs, expression references, and common built-in constants; identifiers must be alphanumeric/underscore, starting with a letter/underscore |
+| `OperatorNode`          | `add`, `subtract`, `multiply`, `divide`, `pow`, `mod`, unary `unaryPlus`, `unaryMinus`, `not`, `and`, `or`, `xor`, comparisons, and `nullish` |
+| `FunctionNode`          | `abs`, `ceil`, `exp`, `floor`, `log`, `mean`, `median`, `min`, `max`, `round`, `sign`, `sqrt`, `sum`, `ifnull`, `nullish` |
 | `ParenthesisNode`       | forwards to the wrapped expression |
 | `ArrayNode`             | materialised to Python lists/NumPy arrays |
+| `ConditionalNode`       | lazy scalar ternary evaluation, vectorised NumPy `where` for arrays |
+| `RelationalNode`        | chained comparisons like `10 < x <= 50`, with scalar short-circuiting |
 
 Unknown node types, invalid identifiers, or disallowed functions raise `InvalidNodeError` during compilation.
+
+See [docs/compatibility.md](docs/compatibility.md) for the fuller math.js compatibility matrix and known gaps.
 
 ### Error handling
 
@@ -143,15 +148,24 @@ All examples below assume commands are wrapped with `uv run ...` to execute insi
 2. **Dependency graph** – A topological sorter (`graphlib.TopologicalSorter`) runs over expression references to produce a safe evaluation order while catching cycles and missing references upfront.
 3. **Code generation** – The generated function validates the provided scope, binds required inputs to local variables, evaluates expressions in order, and returns the target. Intermediate values are stored as local variables named after their expression id.
 4. **Execution sandbox** – The compiled module is executed with a tightly scoped globals dictionary: helper math functions, NumPy, and a few safe built-ins only. There is no ambient `__builtins__` exposure.
-5. **Helper functions** – math.js functions map onto small Python helpers (`_mj_min`, `_mj_max`, `_mj_sum`, `_mj_ifnull`) that understand scalars and NumPy arrays.
+5. **Helper functions** – math.js functions map onto small Python helpers for arithmetic, comparison, logical, nullish, and statistics behavior. Equality and ordering use math.js-style default tolerances for numeric round-off.
 
 ## Testing
 
-Run the full suite (178 tests) with:
+Run the full suite (211 tests) with:
 
 ```bash
 uv run pytest
 ```
+
+Run mutation testing with:
+
+```bash
+uv run mutmut run
+uv run mutmut results
+```
+
+The GitHub mutation workflow runs on source and test changes, records the full mutmut result set, and emits a warning when any mutants survive.
 
 The tests cover operator translation, helper semantics, dependency validation, error conditions, numpy-friendly behaviour, and public API ergonomics.
 
@@ -163,7 +177,7 @@ src/mathjs_to_func/
 ├── ast_builder.py       # math.js JSON → Python AST translation
 ├── compiler.py          # dependency graph, code generation, compilation
 ├── errors.py            # structured exception hierarchy
-├── helpers.py           # runtime helpers for min/max/sum/ifnull
+├── helpers.py           # runtime helpers for math.js-compatible functions/operators
 └── py.typed             # PEP 561 marker for type-aware consumers
 ```
 
@@ -171,7 +185,7 @@ Additional documentation lives in `docs/api_design.md`, outlining the initial de
 
 ## Limitations & Future Work
 
-- Only a subset of math.js functions/operators are implemented today.
+- Only a subset of math.js functions/operators are implemented today; see the compatibility matrix for specifics.
 - Units, user-defined functions, and incremental recomputation are intentionally out of scope for this milestone.
 - Arrays are handled via NumPy; if you need bigints, complex numbers, or matrices, the helper layer will require extension.
 
