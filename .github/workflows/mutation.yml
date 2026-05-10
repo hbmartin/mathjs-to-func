@@ -48,6 +48,7 @@ jobs:
 
       - name: Summarize mutation results
         run: |
+          set -o pipefail
           uv run mutmut results --all | tee mutmut-results.txt
           uv run python - <<'PY'
           import os

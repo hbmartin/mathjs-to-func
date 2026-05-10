@@ -164,7 +164,6 @@ MathjsExpression = (
     | FunctionNode
     | ArrayNode
     | RangeNode
-    | IndexNode
     | AccessorNode
     | ObjectNode
     | ConditionalNode

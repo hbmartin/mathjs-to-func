@@ -194,7 +194,7 @@ def test_parse_object_node_properties():
     assert result["properties"]["total"]["type"] == "FunctionNode"
 
 
-def test_parse_standalone_index_node():
+def test_parse_rejects_standalone_index_node():
     payload = json.dumps(
         {
             "type": "IndexNode",
@@ -204,9 +204,5 @@ def test_parse_standalone_index_node():
         },
     )
 
-    result = parse(payload)
-
-    assert result == {
-        "type": "IndexNode",
-        "dimensions": [{"type": "SymbolNode", "name": "i"}],
-    }
+    with pytest.raises(ValueError, match="Invalid math.js JSON payload"):
+        parse(payload)

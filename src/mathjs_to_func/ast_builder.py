@@ -63,13 +63,39 @@ MIN_ARITY_FUNCTIONS = {
     "mode",
     "sum",
     "std",
+    "permutations",
+    "round",
     "variance",
 }
 EXACT_ARITY_FUNCTIONS = {
+    "abs": 1,
+    "acos": 1,
+    "acosh": 1,
+    "asin": 1,
+    "asinh": 1,
+    "atan": 1,
     "atan2": 2,
+    "atanh": 1,
+    "cbrt": 1,
+    "ceil": 1,
     "clamp": 3,
     "combinations": 2,
+    "cos": 1,
+    "cosh": 1,
+    "exp": 1,
+    "factorial": 1,
+    "floor": 1,
     "ifnull": 2,
+    "log": 1,
+    "log1p": 1,
+    "log2": 1,
+    "log10": 1,
+    "sign": 1,
+    "sin": 1,
+    "sinh": 1,
+    "sqrt": 1,
+    "tan": 1,
+    "tanh": 1,
 }
 MAX_ARITY_FUNCTIONS = {
     "permutations": 2,
@@ -445,17 +471,17 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                     node=node,
                 )
 
-        max_arity = MAX_ARITY_FUNCTIONS.get(normalized)
-        if max_arity is not None and arg_count > max_arity:
+        if normalized in MIN_ARITY_FUNCTIONS and arg_count == 0:
             raise InvalidNodeError(
-                f"{normalized} expects at most {max_arity} arguments",
+                f"{normalized} requires at least one argument",
                 expression=self.expression_name,
                 node=node,
             )
 
-        if normalized in MIN_ARITY_FUNCTIONS and arg_count == 0:
+        max_arity = MAX_ARITY_FUNCTIONS.get(normalized)
+        if max_arity is not None and arg_count > max_arity:
             raise InvalidNodeError(
-                f"{normalized} requires at least one argument",
+                f"{normalized} expects at most {max_arity} arguments",
                 expression=self.expression_name,
                 node=node,
             )
