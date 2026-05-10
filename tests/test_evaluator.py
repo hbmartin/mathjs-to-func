@@ -1,5 +1,6 @@
 import math
 from collections.abc import Mapping
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -370,7 +371,7 @@ def test_input_validation_requires_mapping():
     expressions = {"res": symbol("x")}
     evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
     with pytest.raises(InputValidationError):
-        evaluator([1, 2, 3])  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        cast("Any", evaluator)([1, 2, 3])
 
 
 def test_input_validation_missing_keys():
