@@ -56,6 +56,8 @@ MIN_ARITY_FUNCTIONS = {
     "gcd",
     "hypot",
     "lcm",
+    "log",
+    "log1p",
     "max",
     "mean",
     "median",
@@ -86,8 +88,6 @@ EXACT_ARITY_FUNCTIONS = {
     "factorial": 1,
     "floor": 1,
     "ifnull": 2,
-    "log": 1,
-    "log1p": 1,
     "log2": 1,
     "log10": 1,
     "sign": 1,
@@ -98,6 +98,8 @@ EXACT_ARITY_FUNCTIONS = {
     "tanh": 1,
 }
 MAX_ARITY_FUNCTIONS = {
+    "log": 2,
+    "log1p": 2,
     "permutations": 2,
     "round": 2,
 }
@@ -175,33 +177,34 @@ class MathJsAstVisitor[T]:
 
 def _to_number(value: Any, *, expression: str | None) -> float | int:
     if isinstance(value, (int, float)):
-        if isinstance(value, float) and not math.isfinite(value):
-            raise InvalidNodeError(
-                "Non-finite literal encountered",
-                expression=expression,
-                node=None,
-            )
         return value
     if isinstance(value, str):
-        lowered = value.lower()
-        if "." in value or "e" in lowered:
+        stripped = value.strip()
+        lowered = stripped.lower()
+        non_finite_literals = {
+            "inf": math.inf,
+            "+inf": math.inf,
+            "infinity": math.inf,
+            "+infinity": math.inf,
+            "-inf": -math.inf,
+            "-infinity": -math.inf,
+            "nan": math.nan,
+            "+nan": math.nan,
+            "-nan": math.nan,
+        }
+        if lowered in non_finite_literals:
+            return non_finite_literals[lowered]
+        if "." in stripped or "e" in lowered:
             try:
-                parsed = float(value)
+                return float(stripped)
             except ValueError as exc:
                 raise InvalidNodeError(
                     f"Invalid numeric literal: {value!r}",
                     expression=expression,
                     node=None,
                 ) from exc
-            if not math.isfinite(parsed):
-                raise InvalidNodeError(
-                    "Non-finite literal encountered",
-                    expression=expression,
-                    node=None,
-                )
-            return parsed
         try:
-            return int(value, 10)
+            return int(stripped, 10)
         except ValueError as exc:
             raise InvalidNodeError(
                 f"Invalid numeric literal: {value!r}",
@@ -323,7 +326,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
     ) -> ast.expr:
         if fn == "not":
             return ast.Call(
-                func=ast.Name(id="_mj_not", ctx=ast.Load()),
+                func=ast.Name(id="__mj_not", ctx=ast.Load()),
                 args=[self.visit(child)],
                 keywords=[],
             )
@@ -360,12 +363,12 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 op = ast.Mod()
             case "nullish":
                 return ast.Call(
-                    func=ast.Name(id="_mj_lazy_ifnull", ctx=ast.Load()),
+                    func=ast.Name(id="__mj_lazy_ifnull", ctx=ast.Load()),
                     args=[left, self._defer(right)],
                     keywords=[],
                 )
             case "and" | "or":
-                helper_name = "_mj_lazy_and" if fn == "and" else "_mj_lazy_or"
+                helper_name = "__mj_lazy_and" if fn == "and" else "__mj_lazy_or"
                 return ast.Call(
                     func=ast.Name(id=helper_name, ctx=ast.Load()),
                     args=[left, self._defer(right)],
@@ -381,13 +384,13 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 | "xor"
             ):
                 helper_name = {
-                    "larger": "_mj_larger",
-                    "largerEq": "_mj_larger_eq",
-                    "smaller": "_mj_smaller",
-                    "smallerEq": "_mj_smaller_eq",
-                    "equal": "_mj_equal",
-                    "unequal": "_mj_unequal",
-                    "xor": "_mj_xor",
+                    "larger": "__mj_larger",
+                    "largerEq": "__mj_larger_eq",
+                    "smaller": "__mj_smaller",
+                    "smallerEq": "__mj_smaller_eq",
+                    "equal": "__mj_equal",
+                    "unequal": "__mj_unequal",
+                    "xor": "__mj_xor",
                 }[fn]
                 return ast.Call(
                     func=ast.Name(id=helper_name, ctx=ast.Load()),
@@ -541,7 +544,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         )
 
     def visit_RangeNode(self, node: Mapping[str, Any]) -> ast.expr:
-        return self._build_range_call(node, helper_name="_mj_range")
+        return self._build_range_call(node, helper_name="__mj_range")
 
     def _build_index_dimensions(self, node: Mapping[str, Any]) -> list[ast.expr]:
         if node.get("dotNotation") is True:
@@ -566,13 +569,13 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 result.append(
                     self._build_range_call(
                         dimension_node,
-                        helper_name="_mj_index_range",
+                        helper_name="__mj_index_range",
                     ),
                 )
             else:
                 result.append(
                     ast.Call(
-                        func=ast.Name(id="_mj_index", ctx=ast.Load()),
+                        func=ast.Name(id="__mj_index", ctx=ast.Load()),
                         args=[self.visit(dimension_node)],
                         keywords=[],
                     ),
@@ -604,7 +607,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 node=node,
             )
         return ast.Call(
-            func=ast.Name(id="_mj_access", ctx=ast.Load()),
+            func=ast.Name(id="__mj_access", ctx=ast.Load()),
             args=[
                 self.visit(object_node),
                 *self._build_index_dimensions(index_node),
@@ -682,7 +685,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
             param_calls.append(self._defer(self.visit(child)))
 
         return ast.Call(
-            func=ast.Name(id="_mj_relational", ctx=ast.Load()),
+            func=ast.Name(id="__mj_relational", ctx=ast.Load()),
             args=[
                 ast.Tuple(
                     elts=[ast.Constant(value=item) for item in conditionals],
@@ -710,7 +713,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
             message="ConditionalNode missing false expression",
         )
         return ast.Call(
-            func=ast.Name(id="_mj_lazy_where", ctx=ast.Load()),
+            func=ast.Name(id="__mj_lazy_where", ctx=ast.Load()),
             args=[
                 self.visit(condition),
                 self._defer(self.visit(true_expr)),

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
+MATHJS_BENCH_TIMEOUT_SECONDS = 120
 
 
 def _sum(*values: object) -> object:
@@ -197,14 +198,22 @@ def _benchmark_mathjs(
         ],
         "repeats": repeats,
     }
-    completed = subprocess.run(  # noqa: S603
-        [node, str(script)],
-        input=json.dumps(input_payload),
-        cwd=ROOT,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
+    command = [node, str(script)]
+    try:
+        completed = subprocess.run(  # noqa: S603
+            command,
+            input=json.dumps(input_payload),
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=MATHJS_BENCH_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "math.js benchmark command timed out after "
+            f"{MATHJS_BENCH_TIMEOUT_SECONDS}s: {' '.join(command)}",
+        ) from exc
     return [
         BenchmarkResult(
             case=item["case"],
@@ -300,6 +309,13 @@ def _write_json(
     )
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m bench")
     parser.add_argument(
@@ -314,7 +330,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--repeats",
-        type=int,
+        type=_positive_int,
         default=5,
         help="number of timing repeats per benchmark",
     )

@@ -124,7 +124,6 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except (ExpressionError, OSError, RuntimeError, TypeError, ValueError) as exc:
         parser.error(str(exc))
-    return 2
 
 
 if __name__ == "__main__":

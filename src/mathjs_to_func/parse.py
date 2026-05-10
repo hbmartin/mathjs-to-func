@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from json import JSONDecodeError
 from typing import Any, Literal
 
@@ -15,9 +16,23 @@ from pydantic import (
 )
 
 __all__ = [
+    "AccessorNode",
+    "ArrayNode",
+    "ConditionalNode",
+    "ConstantNode",
+    "FunctionNode",
+    "IndexNode",
+    "MathjsExpression",
     "MathjsPayload",
+    "ObjectNode",
+    "OperatorNode",
+    "ParenthesisNode",
+    "RangeNode",
+    "RelationalNode",
+    "SymbolNode",
     "expression_json_schema",
     "parse",
+    "parse_payload",
     "payload_json_schema",
 ]
 
@@ -176,7 +191,7 @@ class MathjsPayload(_MathjsBaseModel):
 
     expressions: dict[str, MathjsExpression]
     inputs: list[str]
-    target: str
+    target: str | list[str]
 
 
 for model in (
@@ -198,6 +213,34 @@ for model in (
 
 
 _NODE_ADAPTER = TypeAdapter(MathjsExpression)
+_UNSUPPORTED_MATHJS_VALUE_TYPES = frozenset(
+    {
+        "BigNumber",
+        "Complex",
+        "Fraction",
+        "Unit",
+    },
+)
+
+
+def _decode_json(source: str) -> Any:  # noqa: ANN401
+    try:
+        return json.loads(source)
+    except JSONDecodeError as exc:
+        raise ValueError("Invalid math.js JSON payload") from exc
+
+
+def _reject_unsupported_replacer_values(value: Any) -> None:  # noqa: ANN401
+    if isinstance(value, dict):
+        marker = value.get("mathjs")
+        if marker in _UNSUPPORTED_MATHJS_VALUE_TYPES:
+            raise ValueError(f"Unsupported math.js serialized value type: {marker}")
+        for child in value.values():
+            _reject_unsupported_replacer_values(child)
+        return
+    if isinstance(value, list):
+        for child in value:
+            _reject_unsupported_replacer_values(child)
 
 
 def expression_json_schema() -> dict[str, Any]:
@@ -229,8 +272,21 @@ def parse(source: str) -> dict[str, Any]:
         If the input cannot be decoded or does not match the supported schema.
 
     """
+    data = _decode_json(source)
+    _reject_unsupported_replacer_values(data)
     try:
-        node = _NODE_ADAPTER.validate_json(source)
-    except (ValidationError, JSONDecodeError) as exc:
+        node = _NODE_ADAPTER.validate_python(data)
+    except ValidationError as exc:
         raise ValueError("Invalid math.js JSON payload") from exc
     return node.as_ast()
+
+
+def parse_payload(source: str) -> dict[str, Any]:
+    """Parse and validate a complete evaluator payload JSON string."""
+    data = _decode_json(source)
+    _reject_unsupported_replacer_values(data)
+    try:
+        payload = MathjsPayload.model_validate(data)
+    except ValidationError as exc:
+        raise ValueError("Invalid math.js JSON payload") from exc
+    return payload.as_ast()

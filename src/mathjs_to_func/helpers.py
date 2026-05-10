@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from functools import reduce
 from typing import TYPE_CHECKING, Any, cast
 
@@ -13,52 +15,110 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
 HELPER_NAME_MAP = {
-    "abs": "_mj_abs",
-    "acos": "_mj_acos",
-    "acosh": "_mj_acosh",
-    "asin": "_mj_asin",
-    "asinh": "_mj_asinh",
-    "atan": "_mj_atan",
-    "atan2": "_mj_atan2",
-    "atanh": "_mj_atanh",
-    "ceil": "_mj_ceil",
-    "cbrt": "_mj_cbrt",
-    "clamp": "_mj_clamp",
-    "combinations": "_mj_combinations",
-    "cos": "_mj_cos",
-    "cosh": "_mj_cosh",
-    "exp": "_mj_exp",
-    "factorial": "_mj_factorial",
-    "floor": "_mj_floor",
-    "gcd": "_mj_gcd",
-    "hypot": "_mj_hypot",
-    "lcm": "_mj_lcm",
-    "log": "_mj_log",
-    "log1p": "_mj_log1p",
-    "log2": "_mj_log2",
-    "log10": "_mj_log10",
-    "mean": "_mj_mean",
-    "median": "_mj_median",
-    "min": "_mj_min",
-    "max": "_mj_max",
-    "mode": "_mj_mode",
-    "permutations": "_mj_permutations",
-    "round": "_mj_round",
-    "sign": "_mj_sign",
-    "sin": "_mj_sin",
-    "sinh": "_mj_sinh",
-    "sqrt": "_mj_sqrt",
-    "std": "_mj_std",
-    "sum": "_mj_sum",
-    "tan": "_mj_tan",
-    "tanh": "_mj_tanh",
-    "variance": "_mj_variance",
-    "ifnull": "_mj_ifnull",
-    "nullish": "_mj_ifnull",
+    "abs": "__mj_abs",
+    "acos": "__mj_acos",
+    "acosh": "__mj_acosh",
+    "asin": "__mj_asin",
+    "asinh": "__mj_asinh",
+    "atan": "__mj_atan",
+    "atan2": "__mj_atan2",
+    "atanh": "__mj_atanh",
+    "ceil": "__mj_ceil",
+    "cbrt": "__mj_cbrt",
+    "clamp": "__mj_clamp",
+    "combinations": "__mj_combinations",
+    "cos": "__mj_cos",
+    "cosh": "__mj_cosh",
+    "exp": "__mj_exp",
+    "factorial": "__mj_factorial",
+    "floor": "__mj_floor",
+    "gcd": "__mj_gcd",
+    "hypot": "__mj_hypot",
+    "lcm": "__mj_lcm",
+    "log": "__mj_log",
+    "log1p": "__mj_log1p",
+    "log2": "__mj_log2",
+    "log10": "__mj_log10",
+    "mean": "__mj_mean",
+    "median": "__mj_median",
+    "min": "__mj_min",
+    "max": "__mj_max",
+    "mode": "__mj_mode",
+    "permutations": "__mj_permutations",
+    "round": "__mj_round",
+    "sign": "__mj_sign",
+    "sin": "__mj_sin",
+    "sinh": "__mj_sinh",
+    "sqrt": "__mj_sqrt",
+    "std": "__mj_std",
+    "sum": "__mj_sum",
+    "tan": "__mj_tan",
+    "tanh": "__mj_tanh",
+    "variance": "__mj_variance",
+    "ifnull": "__mj_ifnull",
+    "nullish": "__mj_ifnull",
 }
 
 MATHJS_REL_TOL = 1e-12
 MATHJS_ABS_TOL = 1e-15
+
+
+def _coerce_tolerance(value: object, *, name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a non-negative finite number")
+    try:
+        tolerance = float(cast("Any", value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a non-negative finite number") from exc
+    if not math.isfinite(tolerance) or tolerance < 0:
+        raise ValueError(f"{name} must be a non-negative finite number")
+    return tolerance
+
+
+@dataclass(frozen=True)
+class EvalConfig:
+    """Runtime options used by compiled evaluators."""
+
+    rel_tol: float = MATHJS_REL_TOL
+    abs_tol: float = MATHJS_ABS_TOL
+    epsilon: float | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        rel_tol: object = self.rel_tol
+        abs_tol: object = self.abs_tol
+        if self.epsilon is not None:
+            if self.rel_tol == MATHJS_REL_TOL:
+                rel_tol = self.epsilon
+            if self.abs_tol == MATHJS_ABS_TOL:
+                abs_tol = self.epsilon
+
+        object.__setattr__(
+            self,
+            "rel_tol",
+            _coerce_tolerance(rel_tol, name="rel_tol"),
+        )
+        object.__setattr__(
+            self,
+            "abs_tol",
+            _coerce_tolerance(abs_tol, name="abs_tol"),
+        )
+        object.__setattr__(self, "epsilon", None)
+
+
+def coerce_eval_config(config: EvalConfig | Mapping[str, object] | None) -> EvalConfig:
+    """Normalize a user-supplied evaluator config."""
+    if config is None:
+        return EvalConfig()
+    if isinstance(config, EvalConfig):
+        return config
+    if isinstance(config, Mapping):
+        allowed = {"rel_tol", "abs_tol", "epsilon"}
+        unknown = set(config) - allowed
+        if unknown:
+            names = ", ".join(sorted(str(item) for item in unknown))
+            raise ValueError(f"Unknown EvalConfig option(s): {names}")
+        return EvalConfig(**dict(config))
+    raise TypeError("config must be an EvalConfig, mapping, or None")
 
 
 def _expand_args(args: Sequence[object]) -> list[object]:
@@ -95,6 +155,26 @@ def _maybe_scalar(value: object) -> object:
 
 def _is_array_like(value: object) -> bool:
     return isinstance(value, (list, tuple, np.ndarray))
+
+
+def _flatten_nested(value: object) -> Iterator[object]:
+    if isinstance(value, np.ndarray):
+        for item in value.flat:
+            yield from _flatten_nested(cast("object", item))
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _flatten_nested(item)
+    else:
+        yield value
+
+
+def _mode_key(value: object, *, nan_key: object) -> object:
+    try:
+        if bool(np.isnan(cast("Any", value))):
+            return nan_key
+    except (TypeError, ValueError):
+        pass
+    return value
 
 
 def _maybe_bool(value: object) -> object:
@@ -238,8 +318,10 @@ def _mj_sqrt(value: object) -> object:
     return _unary_numpy(np.sqrt, value)
 
 
-def _mj_log(value: object) -> object:
-    return _unary_numpy(np.log, value)
+def _mj_log(value: object, base: object | None = None) -> object:
+    if base is None:
+        return _unary_numpy(np.log, value)
+    return _maybe_scalar(np.log(cast("Any", value)) / np.log(cast("Any", base)))
 
 
 def _mj_log2(value: object) -> object:
@@ -250,8 +332,10 @@ def _mj_log10(value: object) -> object:
     return _unary_numpy(np.log10, value)
 
 
-def _mj_log1p(value: object) -> object:
-    return _unary_numpy(np.log1p, value)
+def _mj_log1p(value: object, base: object | None = None) -> object:
+    if base is None:
+        return _unary_numpy(np.log1p, value)
+    return _maybe_scalar(np.log1p(cast("Any", value)) / np.log(cast("Any", base)))
 
 
 def _mj_exp(value: object) -> object:
@@ -331,8 +415,17 @@ def _mj_clamp(value: object, lower: object, upper: object) -> object:
 
 
 def _mj_round(value: object, decimals: object = 0) -> object:
+    if _is_array_like(decimals):
+        decimal_values = _integer_array(decimals, name="round")
+
+        def round_item(item: object, places: object) -> object:
+            return np.round(cast("Any", item), _as_integer(places, name="round"))
+
+        return _maybe_scalar(np.vectorize(round_item)(value, decimal_values))
+
+    decimal_places = _as_integer(decimals, name="round")
     return _maybe_scalar(
-        np.round(cast("Any", value), int(cast("Any", decimals))),
+        np.round(cast("Any", value), decimal_places),
     )
 
 
@@ -398,31 +491,12 @@ def _mj_std(*args: object) -> object:
 
 def _mj_mode(*args: object) -> object:
     nan_key = object()
-
-    def flatten(value: object) -> Iterator[object]:
-        if isinstance(value, np.ndarray):
-            for item in value.flat:
-                yield from flatten(cast("object", item))
-        elif isinstance(value, (list, tuple)):
-            for item in value:
-                yield from flatten(item)
-        else:
-            yield value
-
-    def mode_key(value: object) -> object:
-        try:
-            if bool(np.isnan(cast("Any", value))):
-                return nan_key
-        except (TypeError, ValueError):
-            pass
-        return value
-
     values = _expand_args(args)
     counts: Counter[object] = Counter()
     originals: dict[object, object] = {}
     for item in values:
-        for scalar in flatten(item):
-            key = mode_key(scalar)
+        for scalar in _flatten_nested(item):
+            key = _mode_key(scalar, nan_key=nan_key)
             counts[key] += 1
             originals.setdefault(key, np.nan if key is nan_key else scalar)
     if not counts:
@@ -484,18 +558,33 @@ def _mj_permutations(total: object, choose: object | None = None) -> object:
     return _maybe_scalar(np.vectorize(permutations)(total, choose))
 
 
-def _mj_close(left: object, right: object) -> object:
+def _mj_close_with_tolerances(
+    left: object,
+    right: object,
+    *,
+    rel_tol: float,
+    abs_tol: float,
+) -> object:
     try:
         return _maybe_scalar(
             np.isclose(
                 cast("Any", left),
                 cast("Any", right),
-                rtol=MATHJS_REL_TOL,
-                atol=MATHJS_ABS_TOL,
+                rtol=rel_tol,
+                atol=abs_tol,
             ),
         )
     except (TypeError, ValueError):
         return _binary_numpy(np.equal, left, right)
+
+
+def _mj_close(left: object, right: object) -> object:
+    return _mj_close_with_tolerances(
+        left,
+        right,
+        rel_tol=MATHJS_REL_TOL,
+        abs_tol=MATHJS_ABS_TOL,
+    )
 
 
 def _mj_larger(left: object, right: object) -> object:
@@ -651,6 +740,144 @@ def _mj_relational(
     return _maybe_scalar(result)
 
 
+def _configured_comparison_helpers(
+    config: EvalConfig,
+) -> dict[str, Callable[..., object]]:
+    def close(left: object, right: object) -> object:
+        return _mj_close_with_tolerances(
+            left,
+            right,
+            rel_tol=config.rel_tol,
+            abs_tol=config.abs_tol,
+        )
+
+    def larger(left: object, right: object) -> object:
+        return _maybe_scalar(
+            np.logical_and(
+                np.greater(cast("Any", left), cast("Any", right)),
+                np.logical_not(cast("Any", close(left, right))),
+            ),
+        )
+
+    def larger_eq(left: object, right: object) -> object:
+        return _maybe_scalar(
+            np.logical_or(
+                np.greater(cast("Any", left), cast("Any", right)),
+                cast("Any", close(left, right)),
+            ),
+        )
+
+    def smaller(left: object, right: object) -> object:
+        return _maybe_scalar(
+            np.logical_and(
+                np.less(cast("Any", left), cast("Any", right)),
+                np.logical_not(cast("Any", close(left, right))),
+            ),
+        )
+
+    def smaller_eq(left: object, right: object) -> object:
+        return _maybe_scalar(
+            np.logical_or(
+                np.less(cast("Any", left), cast("Any", right)),
+                cast("Any", close(left, right)),
+            ),
+        )
+
+    def equal(left: object, right: object) -> object:
+        return close(left, right)
+
+    def unequal(left: object, right: object) -> object:
+        return _maybe_scalar(np.logical_not(cast("Any", equal(left, right))))
+
+    relational_helpers = {
+        "larger": larger,
+        "largerEq": larger_eq,
+        "smaller": smaller,
+        "smallerEq": smaller_eq,
+        "equal": equal,
+        "unequal": unequal,
+    }
+
+    def relational(
+        conditionals: Sequence[str],
+        *terms: Callable[[], object],
+    ) -> object:
+        if len(conditionals) != len(terms) - 1:
+            raise ValueError("RelationalNode requires one fewer conditional than params")
+
+        left = terms[0]()
+        result: object = True
+        vector_mode = False
+
+        for index, conditional in enumerate(conditionals):
+            try:
+                compare = relational_helpers[conditional]
+            except KeyError as exc:
+                msg = f"Unsupported relational conditional: {conditional!r}"
+                raise ValueError(msg) from exc
+            right = terms[index + 1]()
+            comparison = compare(left, right)
+
+            if _is_array_like(comparison):
+                result = np.logical_and(np.asarray(result), np.asarray(comparison))
+                vector_mode = True
+            elif vector_mode:
+                result = np.logical_and(np.asarray(result), cast("Any", comparison))
+            elif not comparison:
+                return False
+
+            left = right
+
+        return _maybe_scalar(result)
+
+    return {
+        "__mj_equal": equal,
+        "__mj_larger": larger,
+        "__mj_larger_eq": larger_eq,
+        "__mj_relational": relational,
+        "__mj_smaller": smaller,
+        "__mj_smaller_eq": smaller_eq,
+        "__mj_unequal": unequal,
+    }
+
+
+def create_helper_functions(
+    config: EvalConfig | Mapping[str, object] | None = None,
+) -> dict[str, Callable[..., object]]:
+    """Return generated-function helpers bound to an evaluator config."""
+    normalized = coerce_eval_config(config)
+    helpers = dict(HELPER_FUNCTIONS)
+    helpers.update(_configured_comparison_helpers(normalized))
+    return helpers
+
+
+def source_preamble(config: EvalConfig | Mapping[str, object] | None = None) -> str:
+    """Return imports and helper bindings for executable generated source."""
+    normalized = coerce_eval_config(config)
+    return (
+        "from collections.abc import Mapping as __mj_Mapping\n"
+        "from mathjs_to_func.errors import InputValidationError as "
+        "__mj_InputValidationError\n"
+        "from mathjs_to_func.errors import RuntimeEvaluationError as "
+        "__mj_RuntimeEvaluationError\n"
+        "from mathjs_to_func.helpers import EvalConfig as __mj_EvalConfig\n"
+        "from mathjs_to_func.helpers import create_helper_functions as "
+        "__mj_create_helper_functions\n\n"
+        "__mj_Exception = Exception\n"
+        "__mj_isinstance = isinstance\n"
+        "__mj_set = set\n"
+        "__mj_sorted = sorted\n"
+        "globals().update(\n"
+        "    __mj_create_helper_functions(\n"
+        "        __mj_EvalConfig(\n"
+        f"            rel_tol={normalized.rel_tol!r},\n"
+        f"            abs_tol={normalized.abs_tol!r},\n"
+        "        )\n"
+        "    )\n"
+        ")\n"
+    )
+
+
 def _mj_range(start: object, end: object, step: object = 1) -> np.ndarray:
     step_value = cast("Any", _maybe_scalar(step))
     if step_value == 0:
@@ -709,74 +936,78 @@ def _mj_access(value: object, *dimensions: object) -> object:
 
 
 HELPER_FUNCTIONS = {
-    "_mj_abs": _mj_abs,
-    "_mj_acos": _mj_acos,
-    "_mj_acosh": _mj_acosh,
-    "_mj_access": _mj_access,
-    "_mj_and": _mj_and,
-    "_mj_asin": _mj_asin,
-    "_mj_asinh": _mj_asinh,
-    "_mj_atan": _mj_atan,
-    "_mj_atan2": _mj_atan2,
-    "_mj_atanh": _mj_atanh,
-    "_mj_cbrt": _mj_cbrt,
-    "_mj_ceil": _mj_ceil,
-    "_mj_clamp": _mj_clamp,
-    "_mj_combinations": _mj_combinations,
-    "_mj_cos": _mj_cos,
-    "_mj_cosh": _mj_cosh,
-    "_mj_equal": _mj_equal,
-    "_mj_exp": _mj_exp,
-    "_mj_factorial": _mj_factorial,
-    "_mj_floor": _mj_floor,
-    "_mj_gcd": _mj_gcd,
-    "_mj_hypot": _mj_hypot,
-    "_mj_index": _mj_index,
-    "_mj_index_range": _mj_index_range,
-    "_mj_lcm": _mj_lcm,
-    "_mj_min": _mj_min,
-    "_mj_max": _mj_max,
-    "_mj_larger": _mj_larger,
-    "_mj_larger_eq": _mj_larger_eq,
-    "_mj_lazy_and": _mj_lazy_and,
-    "_mj_lazy_or": _mj_lazy_or,
-    "_mj_lazy_where": _mj_lazy_where,
-    "_mj_log": _mj_log,
-    "_mj_log1p": _mj_log1p,
-    "_mj_log2": _mj_log2,
-    "_mj_log10": _mj_log10,
-    "_mj_mean": _mj_mean,
-    "_mj_median": _mj_median,
-    "_mj_mode": _mj_mode,
-    "_mj_not": _mj_not,
-    "_mj_or": _mj_or,
-    "_mj_permutations": _mj_permutations,
-    "_mj_range": _mj_range,
-    "_mj_round": _mj_round,
-    "_mj_sign": _mj_sign,
-    "_mj_sin": _mj_sin,
-    "_mj_sinh": _mj_sinh,
-    "_mj_smaller": _mj_smaller,
-    "_mj_smaller_eq": _mj_smaller_eq,
-    "_mj_sqrt": _mj_sqrt,
-    "_mj_std": _mj_std,
-    "_mj_sum": _mj_sum,
-    "_mj_tan": _mj_tan,
-    "_mj_tanh": _mj_tanh,
-    "_mj_ifnull": _mj_ifnull,
-    "_mj_lazy_ifnull": _mj_lazy_ifnull,
-    "_mj_relational": _mj_relational,
-    "_mj_unequal": _mj_unequal,
-    "_mj_variance": _mj_variance,
-    "_mj_where": _mj_where,
-    "_mj_xor": _mj_xor,
+    "__mj_abs": _mj_abs,
+    "__mj_acos": _mj_acos,
+    "__mj_acosh": _mj_acosh,
+    "__mj_access": _mj_access,
+    "__mj_and": _mj_and,
+    "__mj_asin": _mj_asin,
+    "__mj_asinh": _mj_asinh,
+    "__mj_atan": _mj_atan,
+    "__mj_atan2": _mj_atan2,
+    "__mj_atanh": _mj_atanh,
+    "__mj_cbrt": _mj_cbrt,
+    "__mj_ceil": _mj_ceil,
+    "__mj_clamp": _mj_clamp,
+    "__mj_combinations": _mj_combinations,
+    "__mj_cos": _mj_cos,
+    "__mj_cosh": _mj_cosh,
+    "__mj_equal": _mj_equal,
+    "__mj_exp": _mj_exp,
+    "__mj_factorial": _mj_factorial,
+    "__mj_floor": _mj_floor,
+    "__mj_gcd": _mj_gcd,
+    "__mj_hypot": _mj_hypot,
+    "__mj_index": _mj_index,
+    "__mj_index_range": _mj_index_range,
+    "__mj_lcm": _mj_lcm,
+    "__mj_min": _mj_min,
+    "__mj_max": _mj_max,
+    "__mj_larger": _mj_larger,
+    "__mj_larger_eq": _mj_larger_eq,
+    "__mj_lazy_and": _mj_lazy_and,
+    "__mj_lazy_or": _mj_lazy_or,
+    "__mj_lazy_where": _mj_lazy_where,
+    "__mj_log": _mj_log,
+    "__mj_log1p": _mj_log1p,
+    "__mj_log2": _mj_log2,
+    "__mj_log10": _mj_log10,
+    "__mj_mean": _mj_mean,
+    "__mj_median": _mj_median,
+    "__mj_mode": _mj_mode,
+    "__mj_not": _mj_not,
+    "__mj_or": _mj_or,
+    "__mj_permutations": _mj_permutations,
+    "__mj_range": _mj_range,
+    "__mj_round": _mj_round,
+    "__mj_sign": _mj_sign,
+    "__mj_sin": _mj_sin,
+    "__mj_sinh": _mj_sinh,
+    "__mj_smaller": _mj_smaller,
+    "__mj_smaller_eq": _mj_smaller_eq,
+    "__mj_sqrt": _mj_sqrt,
+    "__mj_std": _mj_std,
+    "__mj_sum": _mj_sum,
+    "__mj_tan": _mj_tan,
+    "__mj_tanh": _mj_tanh,
+    "__mj_ifnull": _mj_ifnull,
+    "__mj_lazy_ifnull": _mj_lazy_ifnull,
+    "__mj_relational": _mj_relational,
+    "__mj_unequal": _mj_unequal,
+    "__mj_variance": _mj_variance,
+    "__mj_where": _mj_where,
+    "__mj_xor": _mj_xor,
 }
 
 __all__ = [
+    "EvalConfig",
     "HELPER_FUNCTIONS",
     "HELPER_NAME_MAP",
     "MATHJS_ABS_TOL",
     "MATHJS_REL_TOL",
+    "coerce_eval_config",
+    "create_helper_functions",
+    "source_preamble",
     "_mj_abs",
     "_mj_access",
     "_mj_acos",

@@ -27,7 +27,7 @@ func, source = build_evaluator(
 
 ## Supported math.js Nodes
 
-- `ConstantNode` (numeric) with `valueType` support (number, boolean, null).
+- `ConstantNode` (numeric, including non-finite math.js literals) with `valueType` support (number, boolean, null).
 - `SymbolNode` (references to inputs/expressions/common math.js constants) with regex validation.
 - `OperatorNode` for binary ops (`add`, `subtract`, `multiply`, `divide`, `pow`, `mod`), unary ops (`unaryPlus`, `unaryMinus`, `not`), logical ops (`and`, `or`, `xor`), relational ops (`larger`, `largerEq`, `smaller`, `smallerEq`, `equal`, `unequal`), and `nullish`.
 - `ParenthesisNode` (delegates to child).
@@ -47,6 +47,7 @@ Custom exception hierarchy under `ExpressionError` with subclasses:
 - `CircularDependencyError`
 - `InvalidNodeError`
 - `InputValidationError`
+- `RuntimeEvaluationError`
 
 Each captures context (expression id, offending field) for UI surfacing.
 

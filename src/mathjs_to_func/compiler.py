@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from collections.abc import Mapping as AbcMapping
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
@@ -21,9 +21,12 @@ from .errors import (
     InputValidationError,
     InvalidNodeError,
     MissingTargetError,
+    RuntimeEvaluationError,
     UnknownIdentifierError,
 )
-from .helpers import HELPER_FUNCTIONS, HELPER_NAME_MAP
+from .helpers import EvalConfig, HELPER_NAME_MAP, coerce_eval_config, create_helper_functions
+
+RESERVED_INTERNAL_PREFIX = "__mj_"
 
 
 @dataclass(frozen=True)
@@ -33,7 +36,22 @@ class CompilationResult:
     function: Any
     required_inputs: tuple[str, ...]
     evaluation_order: tuple[str, ...]
+    targets: tuple[str, ...]
+    returns_mapping: bool
     module_ast: ast.Module
+    config: EvalConfig
+
+
+def _ensure_user_identifier(name: str, *, expression: str | None) -> str:
+    safe_name = ensure_identifier(name, expression=expression)
+    if safe_name.startswith(RESERVED_INTERNAL_PREFIX):
+        raise InvalidNodeError(
+            f"Identifier {safe_name!r} uses reserved internal prefix "
+            f"{RESERVED_INTERNAL_PREFIX!r}",
+            expression=expression,
+            node=None,
+        )
+    return safe_name
 
 
 def _normalise_inputs(inputs: Iterable[str]) -> tuple[str, ...]:
@@ -42,7 +60,7 @@ def _normalise_inputs(inputs: Iterable[str]) -> tuple[str, ...]:
     for raw in inputs:
         if not isinstance(raw, str):
             raise ExpressionError("Input identifiers must be strings")
-        name = ensure_identifier(raw, expression=None)
+        name = _ensure_user_identifier(raw, expression=None)
         if name in seen:
             raise ExpressionError(f"Duplicate input identifier: {name}")
         seen.add(name)
@@ -58,7 +76,7 @@ def _validate_expressions(
     for raw_name, node in expressions.items():
         if not isinstance(raw_name, str):
             raise ExpressionError("Expression identifier must be string")
-        name = ensure_identifier(raw_name, expression=None)
+        name = _ensure_user_identifier(raw_name, expression=None)
         if name in validated:
             raise ExpressionError(f"Duplicate expression identifier: {name}")
         if name in input_names:
@@ -75,13 +93,34 @@ def _validate_expressions(
     return validated
 
 
+def _normalise_targets(target: str | Sequence[str]) -> tuple[tuple[str, ...], bool]:
+    if isinstance(target, str):
+        return (_ensure_user_identifier(target, expression=None),), False
+    if isinstance(target, (bytes, bytearray)) or not isinstance(target, Sequence):
+        raise ExpressionError("Target must be a string or sequence of strings")
+
+    seen: set[str] = set()
+    targets: list[str] = []
+    for raw in target:
+        if not isinstance(raw, str):
+            raise ExpressionError("Target identifiers must be strings")
+        name = _ensure_user_identifier(raw, expression=None)
+        if name in seen:
+            raise ExpressionError(f"Duplicate target identifier: {name}")
+        seen.add(name)
+        targets.append(name)
+    if not targets:
+        raise ExpressionError("At least one target identifier is required")
+    return tuple(targets), True
+
+
 def _dependency_closure(
-    target: str,
+    targets: Sequence[str],
     dependency_map: Mapping[str, set[str]],
     expression_names: set[str],
 ) -> set[str]:
     needed: set[str] = set()
-    stack = [target]
+    stack = list(targets)
     while stack:
         current = stack.pop()
         if current in needed:
@@ -97,8 +136,14 @@ def _build_function_ast(
     expressions: Mapping[str, Mapping[str, Any]],
     required_inputs: tuple[str, ...],
     allowed_inputs: tuple[str, ...],
-    target: str,
+    targets: tuple[str, ...],
+    returns_mapping: bool,
 ) -> ast.Module:
+    scope_name = "__mj_scope"
+    scope_keys_name = "__mj_scope_keys"
+    missing_name = "__mj_missing"
+    extra_name = "__mj_extra"
+    error_name = "__mj_error"
     builder_cache: dict[str, MathJsAstBuilder] = {}
 
     def _builder(expr_name: str) -> MathJsAstBuilder:
@@ -110,14 +155,57 @@ def _build_function_ast(
             )
         return builder_cache[expr_name]
 
-    scope_arg = ast.arg(arg="scope")
+    def _runtime_wrapped_assign(expr_name: str) -> ast.Try:
+        return ast.Try(
+            body=[
+                ast.Assign(
+                    targets=[ast.Name(id=expr_name, ctx=ast.Store())],
+                    value=_builder(expr_name).build(expressions[expr_name]),
+                ),
+            ],
+            handlers=[
+                ast.ExceptHandler(
+                    type=ast.Name(id="__mj_Exception", ctx=ast.Load()),
+                    name=error_name,
+                    body=[
+                        ast.Raise(
+                            exc=ast.Call(
+                                func=ast.Name(
+                                    id="__mj_RuntimeEvaluationError",
+                                    ctx=ast.Load(),
+                                ),
+                                args=[
+                                    ast.Constant(
+                                        value=(
+                                            f"Error evaluating expression "
+                                            f"{expr_name!r}"
+                                        ),
+                                    ),
+                                ],
+                                keywords=[
+                                    ast.keyword(
+                                        arg="expression",
+                                        value=ast.Constant(value=expr_name),
+                                    ),
+                                ],
+                            ),
+                            cause=ast.Name(id=error_name, ctx=ast.Load()),
+                        ),
+                    ],
+                ),
+            ],
+            orelse=[],
+            finalbody=[],
+        )
+
+    scope_arg = ast.arg(arg=scope_name)
     body: list[ast.stmt] = []
 
     isinstance_call = ast.Call(
-        func=ast.Name(id="isinstance", ctx=ast.Load()),
+        func=ast.Name(id="__mj_isinstance", ctx=ast.Load()),
         args=[
-            ast.Name(id="scope", ctx=ast.Load()),
-            ast.Name(id="Mapping", ctx=ast.Load()),
+            ast.Name(id=scope_name, ctx=ast.Load()),
+            ast.Name(id="__mj_Mapping", ctx=ast.Load()),
         ],
         keywords=[],
     )
@@ -127,7 +215,7 @@ def _build_function_ast(
             body=[
                 ast.Raise(
                     exc=ast.Call(
-                        func=ast.Name(id="InputValidationError", ctx=ast.Load()),
+                        func=ast.Name(id="__mj_InputValidationError", ctx=ast.Load()),
                         args=[ast.Constant(value="Inputs payload must be a mapping")],
                         keywords=[],
                     ),
@@ -140,11 +228,11 @@ def _build_function_ast(
 
     required_set = ast.Set(elts=[ast.Constant(value=name) for name in required_inputs])
     scope_key_call = ast.Call(
-        func=ast.Name(id="set", ctx=ast.Load()),
+        func=ast.Name(id="__mj_set", ctx=ast.Load()),
         args=[
             ast.Call(
                 func=ast.Attribute(
-                    value=ast.Name(id="scope", ctx=ast.Load()),
+                    value=ast.Name(id=scope_name, ctx=ast.Load()),
                     attr="keys",
                     ctx=ast.Load(),
                 ),
@@ -156,17 +244,17 @@ def _build_function_ast(
     )
     body.append(
         ast.Assign(
-            targets=[ast.Name(id="_scope_keys", ctx=ast.Store())],
+            targets=[ast.Name(id=scope_keys_name, ctx=ast.Store())],
             value=scope_key_call,
         ),
     )
     body.append(
         ast.Assign(
-            targets=[ast.Name(id="_missing", ctx=ast.Store())],
+            targets=[ast.Name(id=missing_name, ctx=ast.Store())],
             value=ast.BinOp(
                 left=required_set,
                 op=ast.Sub(),
-                right=ast.Name(id="_scope_keys", ctx=ast.Load()),
+                right=ast.Name(id=scope_keys_name, ctx=ast.Load()),
             ),
         ),
     )
@@ -176,8 +264,8 @@ def _build_function_ast(
             ast.Constant(value="Missing required inputs: "),
             ast.FormattedValue(
                 value=ast.Call(
-                    func=ast.Name(id="sorted", ctx=ast.Load()),
-                    args=[ast.Name(id="_missing", ctx=ast.Load())],
+                    func=ast.Name(id="__mj_sorted", ctx=ast.Load()),
+                    args=[ast.Name(id=missing_name, ctx=ast.Load())],
                     keywords=[],
                 ),
                 conversion=-1,
@@ -187,11 +275,11 @@ def _build_function_ast(
     )
     body.append(
         ast.If(
-            test=ast.Name(id="_missing", ctx=ast.Load()),
+            test=ast.Name(id=missing_name, ctx=ast.Load()),
             body=[
                 ast.Raise(
                     exc=ast.Call(
-                        func=ast.Name(id="InputValidationError", ctx=ast.Load()),
+                        func=ast.Name(id="__mj_InputValidationError", ctx=ast.Load()),
                         args=[missing_message],
                         keywords=[],
                     ),
@@ -205,9 +293,9 @@ def _build_function_ast(
     allowed_set = ast.Set(elts=[ast.Constant(value=name) for name in allowed_inputs])
     body.append(
         ast.Assign(
-            targets=[ast.Name(id="_extra", ctx=ast.Store())],
+            targets=[ast.Name(id=extra_name, ctx=ast.Store())],
             value=ast.BinOp(
-                left=ast.Name(id="_scope_keys", ctx=ast.Load()),
+                left=ast.Name(id=scope_keys_name, ctx=ast.Load()),
                 op=ast.Sub(),
                 right=allowed_set,
             ),
@@ -219,8 +307,8 @@ def _build_function_ast(
             ast.Constant(value="Unexpected inputs provided: "),
             ast.FormattedValue(
                 value=ast.Call(
-                    func=ast.Name(id="sorted", ctx=ast.Load()),
-                    args=[ast.Name(id="_extra", ctx=ast.Load())],
+                    func=ast.Name(id="__mj_sorted", ctx=ast.Load()),
+                    args=[ast.Name(id=extra_name, ctx=ast.Load())],
                     keywords=[],
                 ),
                 conversion=-1,
@@ -230,11 +318,11 @@ def _build_function_ast(
     )
     body.append(
         ast.If(
-            test=ast.Name(id="_extra", ctx=ast.Load()),
+            test=ast.Name(id=extra_name, ctx=ast.Load()),
             body=[
                 ast.Raise(
                     exc=ast.Call(
-                        func=ast.Name(id="InputValidationError", ctx=ast.Load()),
+                        func=ast.Name(id="__mj_InputValidationError", ctx=ast.Load()),
                         args=[extra_message],
                         keywords=[],
                     ),
@@ -249,7 +337,7 @@ def _build_function_ast(
         ast.Assign(
             targets=[ast.Name(id=name, ctx=ast.Store())],
             value=ast.Subscript(
-                value=ast.Name(id="scope", ctx=ast.Load()),
+                value=ast.Name(id=scope_name, ctx=ast.Load()),
                 slice=ast.Constant(value=name),
                 ctx=ast.Load(),
             ),
@@ -257,15 +345,17 @@ def _build_function_ast(
         for name in required_inputs
     )
 
-    body.extend(
-        ast.Assign(
-            targets=[ast.Name(id=expr_name, ctx=ast.Store())],
-            value=_builder(expr_name).build(expressions[expr_name]),
-        )
-        for expr_name in evaluation_order
-    )
+    body.extend(_runtime_wrapped_assign(expr_name) for expr_name in evaluation_order)
 
-    body.append(ast.Return(value=ast.Name(id=target, ctx=ast.Load())))
+    if returns_mapping:
+        return_value: ast.expr = ast.Dict(
+            keys=[ast.Constant(value=target) for target in targets],
+            values=[ast.Name(id=target, ctx=ast.Load()) for target in targets],
+        )
+    else:
+        return_value = ast.Name(id=targets[0], ctx=ast.Load())
+
+    body.append(ast.Return(value=return_value))
 
     func_def = ast.FunctionDef(
         name="_compiled",
@@ -293,20 +383,23 @@ def compile_to_callable(
     *,
     expressions: Mapping[str, Mapping[str, Any]],
     inputs: Iterable[str],
-    target: str,
+    target: str | Sequence[str],
+    config: EvalConfig | Mapping[str, object] | None = None,
 ) -> CompilationResult:
     """Compile expressions into an executable callable with dependency metadata."""
-    if not isinstance(target, str):
-        raise ExpressionError("Target identifier must be a string")
-    target = ensure_identifier(target, expression=None)
+    normalized_config = coerce_eval_config(config)
+    targets, returns_mapping = _normalise_targets(target)
 
     normalised_inputs = _normalise_inputs(inputs)
     input_set = set(normalised_inputs)
 
     validated_exprs = _validate_expressions(expressions, input_set)
 
-    if target not in validated_exprs:
-        raise MissingTargetError(f"Expression {target!r} missing from expressions")
+    for target_name in targets:
+        if target_name not in validated_exprs:
+            raise MissingTargetError(
+                f"Expression {target_name!r} missing from expressions",
+            )
 
     dependency_map: dict[str, set[str]] = {}
     for name, node in validated_exprs.items():
@@ -322,14 +415,14 @@ def compile_to_callable(
             )
         dependency_map[name] = deps
 
-    closure = _dependency_closure(target, dependency_map, set(validated_exprs))
+    closure = _dependency_closure(targets, dependency_map, set(validated_exprs))
     required_inputs = sorted(
         {dep for expr in closure for dep in dependency_map[expr] if dep in input_set},
     )
 
     sorter = TopologicalSorter()
-    for expr in closure:
-        deps = [dep for dep in dependency_map[expr] if dep in closure]
+    for expr in sorted(closure):
+        deps = sorted(dep for dep in dependency_map[expr] if dep in closure)
         sorter.add(expr, *deps)
 
     try:
@@ -346,19 +439,22 @@ def compile_to_callable(
         expressions=validated_exprs,
         required_inputs=tuple(required_inputs),
         allowed_inputs=normalised_inputs,
-        target=target,
+        targets=targets,
+        returns_mapping=returns_mapping,
     )
 
     compiled = compile(module_ast, filename="<mathjs>", mode="exec")
     safe_globals: dict[str, Any] = {
         "__builtins__": {},
-        "InputValidationError": InputValidationError,
-        "Mapping": AbcMapping,
-        "isinstance": isinstance,
-        "set": set,
-        "sorted": sorted,
+        "__mj_Exception": Exception,
+        "__mj_InputValidationError": InputValidationError,
+        "__mj_Mapping": AbcMapping,
+        "__mj_RuntimeEvaluationError": RuntimeEvaluationError,
+        "__mj_isinstance": isinstance,
+        "__mj_set": set,
+        "__mj_sorted": sorted,
     }
-    safe_globals.update(HELPER_FUNCTIONS)
+    safe_globals.update(create_helper_functions(normalized_config))
 
     namespace: dict[str, Any] = {}
     exec(compiled, safe_globals, namespace)
@@ -368,7 +464,10 @@ def compile_to_callable(
         function=function,
         required_inputs=tuple(required_inputs),
         evaluation_order=order,
+        targets=targets,
+        returns_mapping=returns_mapping,
         module_ast=module_ast,
+        config=normalized_config,
     )
 
 
