@@ -70,6 +70,21 @@ def _expand_args(args: Sequence[object]) -> list[object]:
     return list(args)
 
 
+def _collect(args: Sequence[object]) -> tuple[list[object], bool]:
+    values: list[object] = []
+    has_array = False
+    for item in _expand_args(args):
+        if isinstance(item, np.ndarray):
+            values.append(item)
+            has_array = True
+        elif isinstance(item, (list, tuple)):
+            values.append(np.asarray(item))
+            has_array = True
+        else:
+            values.append(item)
+    return values, has_array
+
+
 def _maybe_scalar(value: object) -> object:
     if isinstance(value, np.ndarray) and value.ndim == 0:
         return cast("Any", value).item()
@@ -129,19 +144,7 @@ def _elementwise_reduce(
 
 
 def _mj_min(*args: object) -> object:
-    raw_values = _expand_args(args)
-    values: list[object] = []
-    has_array = False
-    for item in raw_values:
-        if isinstance(item, np.ndarray):
-            values.append(item)
-            has_array = True
-        elif isinstance(item, (list, tuple)):
-            arr = np.asarray(item)
-            values.append(arr)
-            has_array = True
-        else:
-            values.append(item)
+    values, has_array = _collect(args)
     if not values:
         raise ValueError("min requires at least one argument")
     if has_array:
@@ -153,19 +156,7 @@ def _mj_min(*args: object) -> object:
 
 
 def _mj_max(*args: object) -> object:
-    raw_values = _expand_args(args)
-    values: list[object] = []
-    has_array = False
-    for item in raw_values:
-        if isinstance(item, np.ndarray):
-            values.append(item)
-            has_array = True
-        elif isinstance(item, (list, tuple)):
-            arr = np.asarray(item)
-            values.append(arr)
-            has_array = True
-        else:
-            values.append(item)
+    values, has_array = _collect(args)
     if not values:
         raise ValueError("max requires at least one argument")
     if has_array:
@@ -177,19 +168,7 @@ def _mj_max(*args: object) -> object:
 
 
 def _mj_sum(*args: object) -> object:
-    raw_values = _expand_args(args)
-    values: list[object] = []
-    has_array = False
-    for item in raw_values:
-        if isinstance(item, np.ndarray):
-            values.append(item)
-            has_array = True
-        elif isinstance(item, (list, tuple)):
-            arr = np.asarray(item)
-            values.append(arr)
-            has_array = True
-        else:
-            values.append(item)
+    values, has_array = _collect(args)
     if not values:
         raise ValueError("sum requires at least one argument")
 
@@ -678,7 +657,7 @@ def _mj_access(value: object, *dimensions: object) -> object:
         return value
     index = cast("Any", dimensions[0] if len(dimensions) == 1 else tuple(dimensions))
     if isinstance(value, np.ndarray):
-        return _maybe_scalar(value[index])
+        return _maybe_scalar(cast("Any", value)[index])
     if len(dimensions) > 1 and any(isinstance(item, slice) for item in dimensions):
         try:
             return _maybe_scalar(np.asarray(value)[index])

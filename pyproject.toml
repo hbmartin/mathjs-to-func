@@ -58,6 +58,7 @@ dev = [
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
     "ruff>=0.14.2",
+    "simpleeval>=1.0.3",
     "ty>=0.0.1a25",
 ]
 
