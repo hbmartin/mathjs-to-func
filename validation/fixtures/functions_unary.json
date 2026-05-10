@@ -1,0 +1,176 @@
+[
+  {
+    "name": "abs_negative",
+    "expression": "abs(-7)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "abs"
+      },
+      "args": [
+        {
+          "mathjs": "OperatorNode",
+          "op": "-",
+          "fn": "unaryMinus",
+          "args": [
+            {
+              "mathjs": "ConstantNode",
+              "value": 7
+            }
+          ],
+          "implicit": false,
+          "isPercentage": false
+        }
+      ]
+    },
+    "expected": 7
+  },
+  {
+    "name": "ceil_simple",
+    "expression": "ceil(1.2)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "ceil"
+      },
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 1.2
+        }
+      ]
+    },
+    "expected": 2
+  },
+  {
+    "name": "floor_simple",
+    "expression": "floor(1.8)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "floor"
+      },
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 1.8
+        }
+      ]
+    },
+    "expected": 1
+  },
+  {
+    "name": "round_two_decimals",
+    "expression": "round(2.345, 2)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "round"
+      },
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 2.345
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 2
+        }
+      ]
+    },
+    "expected": 2.35
+  },
+  {
+    "name": "sqrt_two",
+    "expression": "sqrt(2)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "sqrt"
+      },
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 2
+        }
+      ]
+    },
+    "expected": 1.4142135623730951
+  },
+  {
+    "name": "exp_one",
+    "expression": "exp(1)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "exp"
+      },
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 1
+        }
+      ]
+    },
+    "expected": 2.718281828459045
+  },
+  {
+    "name": "log_e",
+    "expression": "log(e)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "log"
+      },
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "e"
+        }
+      ]
+    },
+    "expected": 1
+  },
+  {
+    "name": "sign_negative",
+    "expression": "sign(-3)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "sign"
+      },
+      "args": [
+        {
+          "mathjs": "OperatorNode",
+          "op": "-",
+          "fn": "unaryMinus",
+          "args": [
+            {
+              "mathjs": "ConstantNode",
+              "value": 3
+            }
+          ],
+          "implicit": false,
+          "isPercentage": false
+        }
+      ]
+    },
+    "expected": -1
+  }
+]

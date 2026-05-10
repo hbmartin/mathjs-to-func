@@ -1,0 +1,65 @@
+[
+  {
+    "name": "unary_minus",
+    "expression": "-x",
+    "scope": {
+      "x": 7
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "-",
+      "fn": "unaryMinus",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "x"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": -7
+  },
+  {
+    "name": "unary_plus",
+    "expression": "+x",
+    "scope": {
+      "x": -3
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "+",
+      "fn": "unaryPlus",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "x"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": -3
+  },
+  {
+    "name": "logical_not",
+    "expression": "not flag",
+    "scope": {
+      "flag": true
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "not",
+      "fn": "not",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "flag"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": false
+  }
+]

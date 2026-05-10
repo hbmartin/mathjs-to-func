@@ -1,0 +1,158 @@
+[
+  {
+    "name": "smaller",
+    "expression": "a < b",
+    "scope": {
+      "a": 1,
+      "b": 2
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "<",
+      "fn": "smaller",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  },
+  {
+    "name": "smallerEq",
+    "expression": "a <= b",
+    "scope": {
+      "a": 5,
+      "b": 5
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "<=",
+      "fn": "smallerEq",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  },
+  {
+    "name": "larger",
+    "expression": "a > b",
+    "scope": {
+      "a": 9,
+      "b": 2
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": ">",
+      "fn": "larger",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  },
+  {
+    "name": "largerEq",
+    "expression": "a >= b",
+    "scope": {
+      "a": 5,
+      "b": 5
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": ">=",
+      "fn": "largerEq",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  },
+  {
+    "name": "equal",
+    "expression": "a == b",
+    "scope": {
+      "a": 4,
+      "b": 4
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "==",
+      "fn": "equal",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  },
+  {
+    "name": "unequal",
+    "expression": "a != b",
+    "scope": {
+      "a": 1,
+      "b": 2
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "!=",
+      "fn": "unequal",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  }
+]

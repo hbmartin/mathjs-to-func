@@ -11,6 +11,9 @@ mutmut-results.txt
 # Virtual environments
 .venv
 
+# Node (validation oracle subproject)
+validation/node_modules/
+
 # Mac
 .DS_Store
 .AppleDouble

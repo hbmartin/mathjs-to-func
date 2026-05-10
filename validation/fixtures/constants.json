@@ -1,0 +1,113 @@
+[
+  {
+    "name": "pi_double",
+    "expression": "pi * 2",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "*",
+      "fn": "multiply",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "pi"
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 2
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 6.283185307179586
+  },
+  {
+    "name": "tau_quarter",
+    "expression": "tau / 4",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "/",
+      "fn": "divide",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "tau"
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 4
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 1.5707963267948966
+  },
+  {
+    "name": "e_to_one",
+    "expression": "e ^ 1",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "^",
+      "fn": "pow",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "e"
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 1
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 2.718281828459045
+  },
+  {
+    "name": "ln2_plus_ln10",
+    "expression": "LN2 + LN10",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "+",
+      "fn": "add",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "LN2"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "LN10"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 2.9957322735539913
+  },
+  {
+    "name": "sqrt_of_sqrt2",
+    "expression": "sqrt(SQRT2)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "sqrt"
+      },
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "SQRT2"
+        }
+      ]
+    },
+    "expected": 1.189207115002721
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "ifnull_function",
+    "expression": "ifnull(a, 5)",
+    "scope": {
+      "a": null
+    },
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "ifnull"
+      },
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 5
+        }
+      ]
+    },
+    "expected": 5
+  },
+  {
+    "name": "nullish_function",
+    "expression": "nullish(a, 5)",
+    "scope": {
+      "a": 7
+    },
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "nullish"
+      },
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 5
+        }
+      ]
+    },
+    "expected": 7
+  }
+]
