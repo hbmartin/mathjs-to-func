@@ -61,6 +61,25 @@ def array(*items):
     return {"type": "ArrayNode", "items": list(items)}
 
 
+def range_node(start, end, step=None):
+    node = {"type": "RangeNode", "start": start, "end": end}
+    if step is not None:
+        node["step"] = step
+    return node
+
+
+def index(*dimensions):
+    return {"type": "IndexNode", "dimensions": list(dimensions)}
+
+
+def accessor(obj, *dimensions):
+    return {"type": "AccessorNode", "object": obj, "index": index(*dimensions)}
+
+
+def object_node(**properties: object):
+    return {"type": "ObjectNode", "properties": properties}
+
+
 @pytest.mark.parametrize(
     "fn_name,left,right,expected",
     [
@@ -1334,3 +1353,224 @@ def test_const_with_numeric_string():
     expressions = {"res": const("12")}
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
     assert evaluator({}) == 12
+
+
+@pytest.mark.parametrize(
+    "expression,expected",
+    [
+        (func("sin", op("divide", symbol("pi"), const(2))), 1),
+        (func("cos", const(0)), 1),
+        (func("tan", op("divide", symbol("pi"), const(4))), 1),
+        (func("asin", const(1)), math.pi / 2),
+        (func("acos", const(1)), 0),
+        (func("atan", const(1)), math.pi / 4),
+        (func("atan2", const(1), const(1)), math.pi / 4),
+        (func("sinh", const(0)), 0),
+        (func("cosh", const(0)), 1),
+        (func("tanh", const(0)), 0),
+        (func("asinh", const(0)), 0),
+        (func("acosh", const(1)), 0),
+        (func("atanh", const(0)), 0),
+        (func("log2", const(8)), 3),
+        (func("log10", const(100)), 2),
+        (func("log1p", const(1)), math.log(2)),
+        (func("cbrt", const(27)), 3),
+        (func("hypot", const(3), const(4)), 5),
+        (func("clamp", const(10), const(0), const(5)), 5),
+        (func("factorial", const(5)), 120),
+        (func("gcd", const(24), const(18)), 6),
+        (func("lcm", const(4), const(6)), 12),
+        (func("variance", array(const(1), const(2), const(3))), 1),
+        (func("std", array(const(1), const(2), const(3))), 1),
+        (func("combinations", const(5), const(2)), 10),
+        (func("permutations", const(5), const(2)), 20),
+        (func("permutations", const(4)), 24),
+    ],
+)
+def test_v05_scalar_function_expansion(expression, expected):
+    evaluator = build_evaluator(
+        expressions={"res": expression},
+        inputs=[],
+        target="res",
+    )
+    assert evaluator({}) == pytest.approx(expected)
+
+
+def test_mode_returns_all_modes_in_input_order():
+    expressions = {
+        "res": func("mode", array(const(1), const(2), const(2), const(3), const(3))),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+    assert evaluator({}) == [2, 3]
+
+
+def test_v05_function_expansion_vectorizes_common_helpers():
+    expressions = {
+        "trig": func("sin", symbol("angles")),
+        "logs": func("log2", symbol("values")),
+        "roots": func("cbrt", symbol("cubes")),
+        "clamped": func("clamp", symbol("raw"), const(0), const(5)),
+        "gcds": func("gcd", symbol("ints"), const(6)),
+        "combs": func("combinations", symbol("totals"), const(2)),
+        "variance": func("variance", symbol("a"), symbol("b"), symbol("c")),
+        "std": func("std", symbol("a"), symbol("b"), symbol("c")),
+        "res": object_node(
+            trig=symbol("trig"),
+            logs=symbol("logs"),
+            roots=symbol("roots"),
+            clamped=symbol("clamped"),
+            gcds=symbol("gcds"),
+            combs=symbol("combs"),
+            variance=symbol("variance"),
+            std=symbol("std"),
+        ),
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["angles", "values", "cubes", "raw", "ints", "totals", "a", "b", "c"],
+        target="res",
+    )
+
+    result = evaluator(
+        {
+            "angles": np.array([0, math.pi / 2]),
+            "values": np.array([2, 8]),
+            "cubes": np.array([-8, 27]),
+            "raw": np.array([-1, 2, 10]),
+            "ints": np.array([6, 9]),
+            "totals": np.array([5, 6]),
+            "a": np.array([1, 2]),
+            "b": np.array([2, 4]),
+            "c": np.array([3, 6]),
+        },
+    )
+
+    np.testing.assert_allclose(result["trig"], [0, 1])
+    np.testing.assert_allclose(result["logs"], [1, 3])
+    np.testing.assert_allclose(result["roots"], [-2, 3])
+    np.testing.assert_allclose(result["clamped"], [0, 2, 5])
+    np.testing.assert_allclose(result["gcds"], [6, 3])
+    np.testing.assert_allclose(result["combs"], [10, 15])
+    np.testing.assert_allclose(result["variance"], [1, 4])
+    np.testing.assert_allclose(result["std"], [1, 2])
+
+
+@pytest.mark.parametrize(
+    "expression,expected",
+    [
+        (func("add", const(2), const(3)), 5),
+        (func("subtract", const(7), const(2)), 5),
+        (func("multiply", const(4), const(3)), 12),
+        (func("divide", const(10), const(2)), 5),
+        (func("pow", const(2), const(5)), 32),
+        (func("mod", const(17), const(5)), 2),
+        (func("larger", const(4), const(3)), True),
+        (func("smallerEq", const(3), const(3)), True),
+        (func("equal", op("add", const(0.1), const(0.2)), const(0.3)), True),
+        (func("unequal", const(4), const(3)), True),
+        (func("xor", const(True), const(False)), True),
+        (func("not", const(False)), True),
+        (func("unaryMinus", const(5)), -5),
+        (func("unaryPlus", const(-5)), -5),
+    ],
+)
+def test_function_node_operator_aliases(expression, expected):
+    evaluator = build_evaluator(
+        expressions={"res": expression},
+        inputs=[],
+        target="res",
+    )
+    assert evaluator({}) == expected
+
+
+def test_function_node_logical_aliases_preserve_lazy_semantics():
+    expressions = {
+        "and_result": func("and", const(False), op("divide", const(1), const(0))),
+        "or_result": func("or", const(True), op("divide", const(1), const(0))),
+        "nullish_result": func("nullish", const(2), op("divide", const(1), const(0))),
+        "res": array(
+            symbol("and_result"),
+            symbol("or_result"),
+            symbol("nullish_result"),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+    assert evaluator({}) == [False, True, 2]
+
+
+def test_accessor_node_uses_mathjs_one_based_indices():
+    expressions = {"res": accessor(symbol("data"), const(1))}
+    evaluator = build_evaluator(expressions=expressions, inputs=["data"], target="res")
+    assert evaluator({"data": [10, 20, 30]}) == 10
+
+
+def test_accessor_node_accepts_symbolic_index():
+    expressions = {"res": accessor(symbol("vec"), symbol("i"))}
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["vec", "i"],
+        target="res",
+    )
+    assert evaluator({"vec": [10, 20, 30], "i": 2}) == 20
+
+
+def test_accessor_node_handles_numpy_multidimensional_indices():
+    expressions = {"res": accessor(symbol("matrix"), const(2), const(3))}
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["matrix"],
+        target="res",
+    )
+    assert evaluator({"matrix": np.array([[1, 2, 3], [4, 5, 6]])}) == 6
+
+
+def test_accessor_node_handles_inclusive_range_indices():
+    expressions = {"res": accessor(symbol("vec"), range_node(const(2), const(4)))}
+    evaluator = build_evaluator(expressions=expressions, inputs=["vec"], target="res")
+    assert evaluator({"vec": [10, 20, 30, 40, 50]}) == [20, 30, 40]
+
+
+def test_range_node_materializes_inclusive_ranges():
+    expressions = {
+        "forward": range_node(const(1), const(3)),
+        "backward": range_node(const(5), const(1), const(-2)),
+        "res": object_node(forward=symbol("forward"), backward=symbol("backward")),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+    result = evaluator({})
+    np.testing.assert_allclose(result["forward"], [1, 2, 3])
+    np.testing.assert_allclose(result["backward"], [5, 3, 1])
+
+
+def test_range_node_rejects_zero_step():
+    expressions = {"res": range_node(const(1), const(3), const(0))}
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+    with pytest.raises(ValueError, match="step cannot be zero"):
+        evaluator({})
+
+
+def test_object_node_and_new_nodes_collect_dependencies():
+    expressions = {
+        "res": object_node(
+            picked=accessor(symbol("data"), symbol("i")),
+            sequence=range_node(symbol("start"), symbol("end")),
+            total=func("add", symbol("x"), const(1)),
+        ),
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["data", "i", "start", "end", "x", "unused"],
+        target="res",
+    )
+
+    assert evaluator.__mathjs_required_inputs__ == ("data", "end", "i", "start", "x")
+    result = evaluator({"data": [8, 9], "i": 2, "start": 2, "end": 4, "x": 10})
+    assert result["picked"] == 9
+    assert result["total"] == 11
+    np.testing.assert_allclose(result["sequence"], [2, 3, 4])
+
+
+def test_block_node_remains_unsupported():
+    expressions = {"res": {"type": "BlockNode", "blocks": []}}
+    with pytest.raises(InvalidNodeError):
+        build_evaluator(expressions=expressions, inputs=[], target="res")

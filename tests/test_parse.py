@@ -136,3 +136,77 @@ def test_parse_relational_node_works_with_build_evaluator():
 def test_parse_invalid_payload_raises_value_error():
     with pytest.raises(ValueError, match=r"Invalid math.js JSON payload"):
         parse('{"type": "UnknownNode", "value": 1}')
+
+
+def test_parse_accessor_index_and_range_nodes():
+    payload = json.dumps(
+        {
+            "type": "AccessorNode",
+            "object": {"type": "SymbolNode", "name": "data"},
+            "index": {
+                "type": "IndexNode",
+                "dimensions": [
+                    {
+                        "type": "RangeNode",
+                        "start": {
+                            "type": "ConstantNode",
+                            "value": "1",
+                            "valueType": "number",
+                        },
+                        "end": {
+                            "type": "ConstantNode",
+                            "value": "3",
+                            "valueType": "number",
+                        },
+                    },
+                ],
+            },
+        },
+    )
+
+    result = parse(payload)
+
+    assert result["type"] == "AccessorNode"
+    assert result["index"]["type"] == "IndexNode"
+    assert result["index"]["dimensions"][0]["type"] == "RangeNode"
+
+
+def test_parse_object_node_properties():
+    payload = json.dumps(
+        {
+            "mathjs": "ObjectNode",
+            "properties": {
+                "total": {
+                    "mathjs": "FunctionNode",
+                    "fn": "add",
+                    "args": [
+                        {"mathjs": "SymbolNode", "name": "x"},
+                        {"mathjs": "ConstantNode", "value": "1", "valueType": "number"},
+                    ],
+                },
+            },
+        },
+    )
+
+    result = parse(payload)
+
+    assert result["type"] == "ObjectNode"
+    assert result["properties"]["total"]["type"] == "FunctionNode"
+
+
+def test_parse_standalone_index_node():
+    payload = json.dumps(
+        {
+            "type": "IndexNode",
+            "dimensions": [
+                {"type": "SymbolNode", "name": "i"},
+            ],
+        },
+    )
+
+    result = parse(payload)
+
+    assert result == {
+        "type": "IndexNode",
+        "dimensions": [{"type": "SymbolNode", "name": "i"}],
+    }

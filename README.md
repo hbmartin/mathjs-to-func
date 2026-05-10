@@ -91,9 +91,12 @@ The returned callable always expects a single mapping argument with the provided
 | `ConstantNode`          | numeric (`number`), boolean, or `null` literals |
 | `SymbolNode`            | inputs, expression references, and common built-in constants; identifiers must be alphanumeric/underscore, starting with a letter/underscore |
 | `OperatorNode`          | `add`, `subtract`, `multiply`, `divide`, `pow`, `mod`, unary `unaryPlus`, `unaryMinus`, `not`, `and`, `or`, `xor`, comparisons, and `nullish` |
-| `FunctionNode`          | `abs`, `ceil`, `exp`, `floor`, `log`, `mean`, `median`, `min`, `max`, `round`, `sign`, `sqrt`, `sum`, `ifnull`, `nullish` |
+| `FunctionNode`          | Common math.js numeric/statistical helpers, including trig, logs, `clamp`, `hypot`, integer combinatorics, `variance`, `std`, `mode`, `ifnull`, and operator aliases such as `add(a, b)` |
 | `ParenthesisNode`       | forwards to the wrapped expression |
 | `ArrayNode`             | materialised to Python lists/NumPy arrays |
+| `AccessorNode`/`IndexNode` | read-only indexing with math.js 1-based indices translated to Python 0-based indices |
+| `RangeNode`             | materialised to inclusive NumPy ranges with optional non-zero step |
+| `ObjectNode`            | materialised to Python dict literals with string keys |
 | `ConditionalNode`       | lazy scalar ternary evaluation, vectorised NumPy `where` for arrays |
 | `RelationalNode`        | chained comparisons like `10 < x <= 50`, with scalar short-circuiting |
 
@@ -152,7 +155,7 @@ All examples below assume commands are wrapped with `uv run ...` to execute insi
 
 ## Testing
 
-Run the full suite (211 tests) with:
+Run the full suite (266 tests) with:
 
 ```bash
 uv run pytest

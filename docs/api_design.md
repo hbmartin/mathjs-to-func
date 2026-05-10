@@ -31,8 +31,11 @@ func, source = build_evaluator(
 - `SymbolNode` (references to inputs/expressions/common math.js constants) with regex validation.
 - `OperatorNode` for binary ops (`add`, `subtract`, `multiply`, `divide`, `pow`, `mod`), unary ops (`unaryPlus`, `unaryMinus`, `not`), logical ops (`and`, `or`, `xor`), relational ops (`larger`, `largerEq`, `smaller`, `smallerEq`, `equal`, `unequal`), and `nullish`.
 - `ParenthesisNode` (delegates to child).
-- `FunctionNode` for whitelisted functions: `abs`, `ceil`, `exp`, `floor`, `log`, `mean`, `median`, `min`, `max`, `round`, `sign`, `sqrt`, `sum`, `ifnull`, `nullish`.
+- `FunctionNode` for whitelisted numeric/statistical helpers, nullish helpers, and operator aliases such as `add(a, b)`.
 - `ArrayNode` for list literals.
+- `AccessorNode`/`IndexNode` for read-only numeric indexing with math.js 1-based indices translated to Python 0-based indices.
+- `RangeNode` for inclusive ranges with optional non-zero step.
+- `ObjectNode` for dict literals with string keys.
 - `ConditionalNode` for lazy ternary expressions.
 - `RelationalNode` for chained comparisons.
 

@@ -48,7 +48,7 @@ jobs:
 
       - name: Summarize mutation results
         run: |
-          uv run mutmut results --all true | tee mutmut-results.txt
+          uv run mutmut results --all | tee mutmut-results.txt
           uv run python - <<'PY'
           import os
           from collections import Counter
@@ -70,7 +70,11 @@ jobs:
           for line in lines:
               if not line.strip():
                   continue
-              _, _, status = line.rpartition(": ")
+              target, separator, status = line.rpartition(": ")
+              if not target or not separator or not status:
+                  counts["invalid"] += 1
+                  print(f"::warning::Could not parse mutmut result line: {line!r}")
+                  continue
               counts[status] += 1
               if status in bad_statuses:
                   bad_results.append(line)
