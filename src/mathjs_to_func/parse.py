@@ -14,7 +14,12 @@ from pydantic import (
     ValidationError,
 )
 
-__all__ = ["parse"]
+__all__ = [
+    "MathjsPayload",
+    "expression_json_schema",
+    "parse",
+    "payload_json_schema",
+]
 
 
 class _MathjsBaseModel(BaseModel):
@@ -159,12 +164,19 @@ MathjsExpression = (
     | FunctionNode
     | ArrayNode
     | RangeNode
-    | IndexNode
     | AccessorNode
     | ObjectNode
     | ConditionalNode
     | RelationalNode
 )
+
+
+class MathjsPayload(_MathjsBaseModel):
+    """Evaluator payload containing expressions, inputs, and target metadata."""
+
+    expressions: dict[str, MathjsExpression]
+    inputs: list[str]
+    target: str
 
 
 for model in (
@@ -180,11 +192,22 @@ for model in (
     ObjectNode,
     ConditionalNode,
     RelationalNode,
+    MathjsPayload,
 ):
     model.model_rebuild()
 
 
 _NODE_ADAPTER = TypeAdapter(MathjsExpression)
+
+
+def expression_json_schema() -> dict[str, Any]:
+    """Return a JSON Schema for a single supported math.js expression tree."""
+    return _NODE_ADAPTER.json_schema(by_alias=True)
+
+
+def payload_json_schema() -> dict[str, Any]:
+    """Return a JSON Schema for a complete evaluator payload."""
+    return MathjsPayload.model_json_schema(by_alias=True)
 
 
 def parse(source: str) -> dict[str, Any]:

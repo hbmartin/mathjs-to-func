@@ -1396,12 +1396,80 @@ def test_v05_scalar_function_expansion(expression, expected):
     assert evaluator({}) == pytest.approx(expected)
 
 
+def test_hypot_single_negative_returns_magnitude():
+    evaluator = build_evaluator(
+        expressions={"res": func("hypot", const(-5))},
+        inputs=[],
+        target="res",
+    )
+
+    assert evaluator({}) == 5
+
+
 def test_mode_returns_all_modes_in_input_order():
     expressions = {
         "res": func("mode", array(const(1), const(2), const(2), const(3), const(3))),
     }
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
     assert evaluator({}) == [2, 3]
+
+
+def test_mode_flattens_nested_arrays_and_coalesces_nan():
+    evaluator = build_evaluator(
+        expressions={"res": func("mode", symbol("x"))},
+        inputs=["x"],
+        target="res",
+    )
+
+    result = evaluator({"x": [[float("nan")], [float("nan")], [1]]})
+
+    assert len(result) == 1
+    assert math.isnan(result[0])
+
+
+def test_gcd_and_lcm_accept_integer_compatible_float_arrays():
+    expressions = {
+        "gcds": func("gcd", symbol("gcd_values"), const(6)),
+        "lcms": func("lcm", symbol("lcm_values"), const(6)),
+        "res": object_node(gcds=symbol("gcds"), lcms=symbol("lcms")),
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["gcd_values", "lcm_values"],
+        target="res",
+    )
+
+    result = evaluator(
+        {
+            "gcd_values": np.array([6.0, 9.0]),
+            "lcm_values": np.array([4.0, 6.0]),
+        },
+    )
+
+    np.testing.assert_allclose(result["gcds"], [6, 3])
+    np.testing.assert_allclose(result["lcms"], [12, 6])
+
+
+def test_gcd_rejects_non_integer_floats():
+    evaluator = build_evaluator(
+        expressions={"res": func("gcd", symbol("x"), const(1))},
+        inputs=["x"],
+        target="res",
+    )
+
+    with pytest.raises(ValueError, match="gcd requires integer arguments"):
+        evaluator({"x": 1.5})
+
+
+def test_integer_helpers_reject_infinity_with_value_error():
+    evaluator = build_evaluator(
+        expressions={"res": func("factorial", symbol("x"))},
+        inputs=["x"],
+        target="res",
+    )
+
+    with pytest.raises(ValueError, match="factorial requires integer arguments"):
+        evaluator({"x": float("inf")})
 
 
 def test_v05_function_expansion_vectorizes_common_helpers():
@@ -1514,6 +1582,19 @@ def test_accessor_node_accepts_symbolic_index():
     assert evaluator({"vec": [10, 20, 30], "i": 2}) == 20
 
 
+@pytest.mark.parametrize("bad_index", [0, -1])
+def test_accessor_node_rejects_indices_below_one(bad_index):
+    expressions = {"res": accessor(symbol("vec"), symbol("i"))}
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["vec", "i"],
+        target="res",
+    )
+
+    with pytest.raises(ValueError, match="IndexNode indices must be >= 1"):
+        evaluator({"vec": [10, 20, 30], "i": bad_index})
+
+
 def test_accessor_node_handles_numpy_multidimensional_indices():
     expressions = {"res": accessor(symbol("matrix"), const(2), const(3))}
     evaluator = build_evaluator(
@@ -1528,6 +1609,21 @@ def test_accessor_node_handles_inclusive_range_indices():
     expressions = {"res": accessor(symbol("vec"), range_node(const(2), const(4)))}
     evaluator = build_evaluator(expressions=expressions, inputs=["vec"], target="res")
     assert evaluator({"vec": [10, 20, 30, 40, 50]}) == [20, 30, 40]
+
+
+@pytest.mark.parametrize(
+    "bad_range",
+    [
+        range_node(const(0), const(2)),
+        range_node(const(1), const(0)),
+    ],
+)
+def test_accessor_node_rejects_range_indices_below_one(bad_range):
+    expressions = {"res": accessor(symbol("vec"), bad_range)}
+    evaluator = build_evaluator(expressions=expressions, inputs=["vec"], target="res")
+
+    with pytest.raises(ValueError, match="RangeNode indices must be >= 1"):
+        evaluator({"vec": [10, 20, 30]})
 
 
 def test_range_node_materializes_inclusive_ranges():
@@ -1547,6 +1643,21 @@ def test_range_node_rejects_zero_step():
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
     with pytest.raises(ValueError, match="step cannot be zero"):
         evaluator({})
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        func("sin", const(1), const(2)),
+        func("factorial", const(5), const(6)),
+        func("log2", const(1), const(2)),
+        func("round"),
+        func("permutations"),
+    ],
+)
+def test_function_arity_gaps_are_rejected_at_compile_time(expression):
+    with pytest.raises(InvalidNodeError):
+        build_evaluator(expressions={"res": expression}, inputs=[], target="res")
 
 
 def test_object_node_and_new_nodes_collect_dependencies():

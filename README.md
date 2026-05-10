@@ -145,6 +145,26 @@ result = evaluator({"x": 40})  # -> 42
 
 All examples below assume commands are wrapped with `uv run ...` to execute inside the managed environment.
 
+## CLI
+
+Compile a payload file and inspect the generated Python source without writing a script:
+
+```bash
+uv run python -m mathjs_to_func compile payload.json --target z --emit-source
+```
+
+Without `--emit-source`, the command validates the payload and prints metadata JSON containing the target, required inputs, and evaluation order. Use `-` as the payload path to read JSON from stdin.
+
+## JSON Schema
+
+Export JSON Schema for frontend validation of serialized math.js payloads:
+
+```bash
+uv run python -m mathjs_to_func schema --output dist/mathjs-to-func.schema.json
+```
+
+The default schema covers a complete evaluator payload (`expressions`, `inputs`, and `target`). Use `--kind expression` to export the schema for a single math.js expression tree.
+
 ## Implementation Notes
 
 1. **AST translation** – `MathJsAstBuilder` walks the math.js JSON and emits Python `ast.AST` nodes. Identifiers are validated via a strict regex to prevent sneaky names like `__import__`.
@@ -155,11 +175,20 @@ All examples below assume commands are wrapped with `uv run ...` to execute insi
 
 ## Testing
 
-Run the full suite (266 tests) with:
+Run the full suite with:
 
 ```bash
 uv run pytest
 ```
+
+Run the benchmark suite locally with:
+
+```bash
+npm ci --prefix bench/js
+uv run python -m bench
+```
+
+CI runs `uv run python -m bench --check` as a relative perf regression gate. The benchmark compares reusable `build_evaluator` call performance with Python `eval`, `simpleeval`, and a Node math.js parse → JSON round-trip → compile path across scalar arithmetic, conditional, helper-heavy, and NumPy payloads.
 
 Run mutation testing with:
 

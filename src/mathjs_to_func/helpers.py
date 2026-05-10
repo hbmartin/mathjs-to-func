@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
 HELPER_NAME_MAP = {
     "abs": "_mj_abs",
@@ -70,6 +70,21 @@ def _expand_args(args: Sequence[object]) -> list[object]:
     return list(args)
 
 
+def _collect(args: Sequence[object]) -> tuple[list[object], bool]:
+    values: list[object] = []
+    has_array = False
+    for item in _expand_args(args):
+        if isinstance(item, np.ndarray):
+            values.append(item)
+            has_array = True
+        elif isinstance(item, (list, tuple)):
+            values.append(np.asarray(item))
+            has_array = True
+        else:
+            values.append(item)
+    return values, has_array
+
+
 def _maybe_scalar(value: object) -> object:
     if isinstance(value, np.ndarray) and value.ndim == 0:
         return cast("Any", value).item()
@@ -94,11 +109,18 @@ def _as_integer(value: object, *, name: str) -> int:
         raise TypeError(f"{name} requires integer arguments")
     try:
         integer = int(cast("Any", scalar))
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{name} requires integer arguments") from exc
     if scalar != integer:
         raise ValueError(f"{name} requires integer arguments")
     return integer
+
+
+def _integer_array(value: object, *, name: str) -> np.ndarray:
+    def as_integer(item: object) -> int:
+        return _as_integer(item, name=name)
+
+    return np.vectorize(as_integer, otypes=[int])(np.asarray(value, dtype=object))
 
 
 def _unary_numpy(func: Callable[..., Any], value: object) -> object:
@@ -129,19 +151,7 @@ def _elementwise_reduce(
 
 
 def _mj_min(*args: object) -> object:
-    raw_values = _expand_args(args)
-    values: list[object] = []
-    has_array = False
-    for item in raw_values:
-        if isinstance(item, np.ndarray):
-            values.append(item)
-            has_array = True
-        elif isinstance(item, (list, tuple)):
-            arr = np.asarray(item)
-            values.append(arr)
-            has_array = True
-        else:
-            values.append(item)
+    values, has_array = _collect(args)
     if not values:
         raise ValueError("min requires at least one argument")
     if has_array:
@@ -153,19 +163,7 @@ def _mj_min(*args: object) -> object:
 
 
 def _mj_max(*args: object) -> object:
-    raw_values = _expand_args(args)
-    values: list[object] = []
-    has_array = False
-    for item in raw_values:
-        if isinstance(item, np.ndarray):
-            values.append(item)
-            has_array = True
-        elif isinstance(item, (list, tuple)):
-            arr = np.asarray(item)
-            values.append(arr)
-            has_array = True
-        else:
-            values.append(item)
+    values, has_array = _collect(args)
     if not values:
         raise ValueError("max requires at least one argument")
     if has_array:
@@ -177,19 +175,7 @@ def _mj_max(*args: object) -> object:
 
 
 def _mj_sum(*args: object) -> object:
-    raw_values = _expand_args(args)
-    values: list[object] = []
-    has_array = False
-    for item in raw_values:
-        if isinstance(item, np.ndarray):
-            values.append(item)
-            has_array = True
-        elif isinstance(item, (list, tuple)):
-            arr = np.asarray(item)
-            values.append(arr)
-            has_array = True
-        else:
-            values.append(item)
+    values, has_array = _collect(args)
     if not values:
         raise ValueError("sum requires at least one argument")
 
@@ -332,7 +318,7 @@ def _mj_hypot(*args: object) -> object:
     values = _expand_args(args)
     if not values:
         raise ValueError("hypot requires at least one argument")
-    result = np.asarray(values[0])
+    result = np.abs(np.asarray(values[0]))
     for item in values[1:]:
         result = np.hypot(result, np.asarray(item))
     return _maybe_scalar(result)
@@ -411,16 +397,38 @@ def _mj_std(*args: object) -> object:
 
 
 def _mj_mode(*args: object) -> object:
-    if len(args) == 1 and isinstance(args[0], np.ndarray):
-        flattened = np.asarray(args[0], dtype=object).ravel().tolist()
-    else:
-        values = _expand_args(args)
-        flattened = np.asarray(values, dtype=object).ravel().tolist()
-    if not flattened:
+    nan_key = object()
+
+    def flatten(value: object) -> Iterator[object]:
+        if isinstance(value, np.ndarray):
+            for item in value.flat:
+                yield from flatten(cast("object", item))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                yield from flatten(item)
+        else:
+            yield value
+
+    def mode_key(value: object) -> object:
+        try:
+            if bool(np.isnan(cast("Any", value))):
+                return nan_key
+        except (TypeError, ValueError):
+            pass
+        return value
+
+    values = _expand_args(args)
+    counts: Counter[object] = Counter()
+    originals: dict[object, object] = {}
+    for item in values:
+        for scalar in flatten(item):
+            key = mode_key(scalar)
+            counts[key] += 1
+            originals.setdefault(key, np.nan if key is nan_key else scalar)
+    if not counts:
         raise ValueError("mode requires at least one argument")
-    counts = Counter(flattened)
     highest = max(counts.values())
-    return [value for value in counts if counts[value] == highest]
+    return [originals[key] for key, count in counts.items() if count == highest]
 
 
 def _mj_factorial(value: object) -> object:
@@ -436,9 +444,9 @@ def _mj_gcd(*args: object) -> object:
     values = _expand_args(args)
     if not values:
         raise ValueError("gcd requires at least one argument")
-    result = np.asarray(values[0])
+    result = _integer_array(values[0], name="gcd")
     for item in values[1:]:
-        result = np.gcd(result, np.asarray(item))
+        result = np.gcd(result, _integer_array(item, name="gcd"))
     return _maybe_scalar(result)
 
 
@@ -446,9 +454,9 @@ def _mj_lcm(*args: object) -> object:
     values = _expand_args(args)
     if not values:
         raise ValueError("lcm requires at least one argument")
-    result = np.asarray(values[0])
+    result = _integer_array(values[0], name="lcm")
     for item in values[1:]:
-        result = np.lcm(result, np.asarray(item))
+        result = np.lcm(result, _integer_array(item, name="lcm"))
     return _maybe_scalar(result)
 
 
@@ -657,15 +665,25 @@ def _mj_range(start: object, end: object, step: object = 1) -> np.ndarray:
 
 
 def _mj_index(value: object) -> int:
-    return _as_integer(value, name="IndexNode") - 1
+    index = _as_integer(value, name="IndexNode")
+    if index < 1:
+        raise ValueError("IndexNode indices must be >= 1")
+    return index - 1
+
+
+def _mj_range_index(value: object) -> int:
+    index = _as_integer(value, name="RangeNode")
+    if index < 1:
+        raise ValueError("RangeNode indices must be >= 1")
+    return index - 1
 
 
 def _mj_index_range(start: object, end: object, step: object = 1) -> slice:
     step_value = _as_integer(step, name="RangeNode")
     if step_value == 0:
         raise ValueError("RangeNode step cannot be zero")
-    start_index = _mj_index(start)
-    end_index = _mj_index(end)
+    start_index = _mj_range_index(start)
+    end_index = _mj_range_index(end)
     if step_value > 0:
         stop: int | None = end_index + 1
     else:
@@ -678,7 +696,7 @@ def _mj_access(value: object, *dimensions: object) -> object:
         return value
     index = cast("Any", dimensions[0] if len(dimensions) == 1 else tuple(dimensions))
     if isinstance(value, np.ndarray):
-        return _maybe_scalar(value[index])
+        return _maybe_scalar(cast("Any", value)[index])
     if len(dimensions) > 1 and any(isinstance(item, slice) for item in dimensions):
         try:
             return _maybe_scalar(np.asarray(value)[index])
