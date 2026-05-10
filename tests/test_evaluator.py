@@ -49,6 +49,14 @@ def func(name, *args):
     }
 
 
+def relational(conditionals, *params):
+    return {
+        "type": "RelationalNode",
+        "conditionals": list(conditionals),
+        "params": list(params),
+    }
+
+
 def array(*items):
     return {"type": "ArrayNode", "items": list(items)}
 
@@ -604,6 +612,98 @@ def test_broad_scalar_functions():
     assert evaluator({}) == pytest.approx(27)
 
 
+def test_mathjs_builtin_constants_without_inputs():
+    expressions = {
+        "res": func(
+            "sum",
+            symbol("pi"),
+            symbol("e"),
+            symbol("tau"),
+            symbol("SQRT2"),
+            symbol("phi"),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+
+    assert evaluator.__mathjs_required_inputs__ == ()
+    assert evaluator({}) == pytest.approx(
+        math.pi + math.e + math.tau + math.sqrt(2) + ((1 + math.sqrt(5)) / 2),
+    )
+
+
+def test_mathjs_builtin_nullish_values():
+    expressions = {
+        "nan_value": func("ifnull", symbol("NaN"), const(3)),
+        "null_value": func("ifnull", symbol("null"), const(5)),
+        "undefined_value": func("ifnull", symbol("undefined"), const(7)),
+        "res": func(
+            "sum",
+            symbol("nan_value"),
+            symbol("null_value"),
+            symbol("undefined_value"),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+
+    assert evaluator({}) == 15
+
+
+def test_inputs_override_mathjs_builtin_constants():
+    expressions = {"res": op("add", symbol("pi"), const(1))}
+    evaluator = build_evaluator(expressions=expressions, inputs=["pi"], target="res")
+
+    assert evaluator.__mathjs_required_inputs__ == ("pi",)
+    assert evaluator({"pi": 2}) == 3
+
+
+def test_mathjs_equal_uses_default_tolerances():
+    expressions = {
+        "value": op("add", const(0.1), const(0.2)),
+        "res": op("equal", symbol("value"), const(0.3)),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+
+    assert evaluator({}) is True
+
+
+def test_mathjs_relational_operators_use_default_tolerances():
+    expressions = {
+        "value": op("add", const(0.1), const(0.2)),
+        "larger": op("larger", symbol("value"), const(0.3)),
+        "larger_eq": op("largerEq", symbol("value"), const(0.3)),
+        "smaller": op("smaller", const(0.3), symbol("value")),
+        "res": array(symbol("larger"), symbol("larger_eq"), symbol("smaller")),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+
+    assert evaluator({}) == [False, True, False]
+
+
+def test_mathjs_equal_tolerances_vectorize():
+    expressions = {"res": op("equal", symbol("x"), const(0.3))}
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+
+    np.testing.assert_array_equal(
+        evaluator({"x": np.array([0.1 + 0.2, 0.31])}),
+        np.array([True, False]),
+    )
+
+
+def test_nullish_function_alias_and_operator():
+    expressions = {
+        "function_alias": func("nullish", symbol("maybe"), const(4)),
+        "operator_value": op(
+            "nullish",
+            const(2),
+            op("divide", const(1), const(0)),
+        ),
+        "res": func("sum", symbol("function_alias"), symbol("operator_value")),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["maybe"], target="res")
+
+    assert evaluator({"maybe": None}) == 6
+
+
 def test_relational_logical_and_conditional_nodes():
     expressions = {
         "condition": {
@@ -632,6 +732,53 @@ def test_relational_logical_and_conditional_nodes():
     evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
     assert evaluator({"x": 12}) == 1
     assert evaluator({"x": 25}) == 0
+
+
+def test_relational_node_scalar_chain():
+    expressions = {
+        "res": relational(
+            ["smaller", "smallerEq"],
+            const(10),
+            symbol("x"),
+            const(50),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+
+    assert evaluator({"x": 25}) is True
+    assert evaluator({"x": 10}) is False
+    assert evaluator({"x": 60}) is False
+
+
+def test_relational_node_vectorizes_chained_comparisons():
+    expressions = {
+        "res": relational(
+            ["smaller", "smallerEq"],
+            const(10),
+            symbol("x"),
+            const(50),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+
+    np.testing.assert_array_equal(
+        evaluator({"x": np.array([5, 25, 50, 55])}),
+        np.array([False, True, True, False]),
+    )
+
+
+def test_relational_node_short_circuits_scalar_false_branch():
+    expressions = {
+        "res": relational(
+            ["unequal", "larger"],
+            symbol("x"),
+            const(0),
+            op("divide", const(1), symbol("x")),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+
+    assert evaluator({"x": 0}) is False
 
 
 def test_relational_and_conditional_nodes_vectorize():

@@ -10,6 +10,7 @@ from graphlib import CycleError, TopologicalSorter
 from typing import Any
 
 from .ast_builder import (
+    MATHJS_BUILTIN_SYMBOLS,
     MathJsAstBuilder,
     SymbolDependencyCollector,
     ensure_identifier,
@@ -105,6 +106,7 @@ def _build_function_ast(
             builder_cache[expr_name] = MathJsAstBuilder(
                 expression_name=expr_name,
                 helper_names=HELPER_NAME_MAP,
+                local_names=set(allowed_inputs) | set(expressions),
             )
         return builder_cache[expr_name]
 
@@ -310,7 +312,7 @@ def compile_to_callable(
     for name, node in validated_exprs.items():
         collector = SymbolDependencyCollector(expression_name=name)
         deps = collector.collect(node)
-        unknown = deps - input_set - set(validated_exprs)
+        unknown = deps - input_set - set(validated_exprs) - set(MATHJS_BUILTIN_SYMBOLS)
         if unknown:
             identifier = sorted(unknown)[0]
             raise UnknownIdentifierError(

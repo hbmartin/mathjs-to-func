@@ -88,6 +88,29 @@ class ArrayNode(_MathjsBaseModel):
     items: list[MathjsExpression] = Field(default_factory=list)
 
 
+class ConditionalNode(_MathjsBaseModel):
+    type: Literal["ConditionalNode"] = Field(
+        default="ConditionalNode",
+        validation_alias=AliasChoices("type", "mathjs"),
+        serialization_alias="type",
+    )
+    condition: MathjsExpression
+    trueExpr: MathjsExpression
+    falseExpr: MathjsExpression
+
+
+class RelationalNode(_MathjsBaseModel):
+    type: Literal["RelationalNode"] = Field(
+        default="RelationalNode",
+        validation_alias=AliasChoices("type", "mathjs"),
+        serialization_alias="type",
+    )
+    conditionals: list[
+        Literal["smaller", "larger", "smallerEq", "largerEq", "equal", "unequal"]
+    ]
+    params: list[MathjsExpression]
+
+
 MathjsExpression = (
     ConstantNode
     | SymbolNode
@@ -95,6 +118,8 @@ MathjsExpression = (
     | OperatorNode
     | FunctionNode
     | ArrayNode
+    | ConditionalNode
+    | RelationalNode
 )
 
 
@@ -105,6 +130,8 @@ for model in (
     OperatorNode,
     FunctionNode,
     ArrayNode,
+    ConditionalNode,
+    RelationalNode,
 ):
     model.model_rebuild()
 

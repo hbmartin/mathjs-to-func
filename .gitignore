@@ -5,6 +5,8 @@ build/
 dist/
 wheels/
 *.egg-info
+mutants/
+mutmut-results.txt
 
 # Virtual environments
 .venv

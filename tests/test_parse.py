@@ -81,6 +81,58 @@ def test_parse_function_node_works_with_build_evaluator():
     assert evaluator({"a": 7}) == 12
 
 
+def test_parse_conditional_node_works_with_build_evaluator():
+    payload = json.dumps(
+        {
+            "type": "ConditionalNode",
+            "condition": {
+                "type": "OperatorNode",
+                "fn": "larger",
+                "args": [
+                    {"type": "SymbolNode", "name": "x"},
+                    {"type": "ConstantNode", "value": "0", "valueType": "number"},
+                ],
+            },
+            "trueExpr": {"type": "SymbolNode", "name": "x"},
+            "falseExpr": {"type": "ConstantNode", "value": "0", "valueType": "number"},
+        },
+    )
+    expression = parse(payload)
+
+    evaluator = build_evaluator(
+        expressions={"result": expression},
+        inputs=["x"],
+        target="result",
+    )
+
+    assert evaluator({"x": 5}) == 5
+    assert evaluator({"x": -1}) == 0
+
+
+def test_parse_relational_node_works_with_build_evaluator():
+    payload = json.dumps(
+        {
+            "type": "RelationalNode",
+            "conditionals": ["smaller", "smallerEq"],
+            "params": [
+                {"type": "ConstantNode", "value": "10", "valueType": "number"},
+                {"type": "SymbolNode", "name": "x"},
+                {"type": "ConstantNode", "value": "20", "valueType": "number"},
+            ],
+        },
+    )
+    expression = parse(payload)
+
+    evaluator = build_evaluator(
+        expressions={"result": expression},
+        inputs=["x"],
+        target="result",
+    )
+
+    assert evaluator({"x": 15}) is True
+    assert evaluator({"x": 25}) is False
+
+
 def test_parse_invalid_payload_raises_value_error():
     with pytest.raises(ValueError, match=r"Invalid math.js JSON payload"):
         parse('{"type": "UnknownNode", "value": 1}')

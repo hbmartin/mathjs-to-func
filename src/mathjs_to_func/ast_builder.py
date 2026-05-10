@@ -13,6 +13,25 @@ from typing import Any
 from .errors import InvalidNodeError
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+MATHJS_BUILTIN_SYMBOLS = {
+    "e": math.e,
+    "E": math.e,
+    "i": 1j,
+    "Infinity": math.inf,
+    "LN2": math.log(2),
+    "LN10": math.log(10),
+    "LOG2E": math.log2(math.e),
+    "LOG10E": math.log10(math.e),
+    "NaN": math.nan,
+    "null": None,
+    "phi": (1 + math.sqrt(5)) / 2,
+    "pi": math.pi,
+    "PI": math.pi,
+    "SQRT1_2": math.sqrt(1 / 2),
+    "SQRT2": math.sqrt(2),
+    "tau": math.tau,
+    "undefined": None,
+}
 
 
 def ensure_identifier(name: str, *, expression: str | None) -> str:
@@ -135,9 +154,11 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         *,
         expression_name: str,
         helper_names: Mapping[str, str],
+        local_names: set[str] | None = None,
     ) -> None:
         super().__init__(expression_name=expression_name)
         self.helper_names = helper_names
+        self.local_names = local_names or set()
 
     def build(self, node: Mapping[str, Any]) -> ast.expr:
         return self.visit(node)
@@ -181,6 +202,8 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 node=node,
             )
         safe_name = ensure_identifier(name, expression=self.expression_name)
+        if safe_name not in self.local_names and safe_name in MATHJS_BUILTIN_SYMBOLS:
+            return ast.Constant(value=MATHJS_BUILTIN_SYMBOLS[safe_name])
         return ast.Name(id=safe_name, ctx=ast.Load())
 
     def visit_ParenthesisNode(self, node: Mapping[str, Any]) -> ast.expr:
@@ -266,6 +289,12 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 op = ast.Pow()
             case "mod":
                 op = ast.Mod()
+            case "nullish":
+                return ast.Call(
+                    func=ast.Name(id="_mj_lazy_ifnull", ctx=ast.Load()),
+                    args=[left, self._defer(right)],
+                    keywords=[],
+                )
             case "and" | "or":
                 helper_name = "_mj_lazy_and" if fn == "and" else "_mj_lazy_or"
                 return ast.Call(
@@ -336,9 +365,9 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
             )
             call_args.append(self.visit(child))
 
-        if normalized == "ifnull" and len(call_args) != 2:
+        if normalized in {"ifnull", "nullish"} and len(call_args) != 2:
             raise InvalidNodeError(
-                "ifnull expects exactly two arguments",
+                f"{normalized} expects exactly two arguments",
                 expression=self.expression_name,
                 node=node,
             )
@@ -352,6 +381,61 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         return ast.Call(
             func=ast.Name(id=helper_name, ctx=ast.Load()),
             args=call_args,
+            keywords=[],
+        )
+
+    def visit_RelationalNode(self, node: Mapping[str, Any]) -> ast.expr:
+        conditionals = self._ensure_iterable(
+            node.get("conditionals"),
+            node=node,
+            message="RelationalNode conditionals must be iterable",
+        )
+        params = self._ensure_iterable(
+            node.get("params"),
+            node=node,
+            message="RelationalNode params must be iterable",
+        )
+        if len(params) < 2 or len(conditionals) != len(params) - 1:
+            raise InvalidNodeError(
+                "RelationalNode requires one fewer conditional than params",
+                expression=self.expression_name,
+                node=node,
+            )
+
+        allowed = {
+            "smaller",
+            "larger",
+            "smallerEq",
+            "largerEq",
+            "equal",
+            "unequal",
+        }
+        for conditional in conditionals:
+            if not isinstance(conditional, str) or conditional not in allowed:
+                raise InvalidNodeError(
+                    f"Unsupported relational conditional: {conditional!r}",
+                    expression=self.expression_name,
+                    node=node,
+                )
+
+        param_calls: list[ast.expr] = []
+        for param in params:
+            child = self._ensure_mapping(
+                param,
+                node=node,
+                message="RelationalNode param must be object",
+            )
+            param_calls.append(self._defer(self.visit(child)))
+
+        return ast.Call(
+            func=ast.Name(id="_mj_relational", ctx=ast.Load()),
+            args=[
+                ast.Tuple(
+                    elts=[ast.Constant(value=item) for item in conditionals],
+                    ctx=ast.Load(),
+                ),
+                *param_calls,
+            ],
             keywords=[],
         )
 
@@ -489,9 +573,26 @@ class SymbolDependencyCollector(MathJsAstVisitor[set[str]]):
             result.update(self.visit(child))
         return result
 
+    def visit_RelationalNode(self, node: Mapping[str, Any]) -> set[str]:
+        params = self._ensure_iterable(
+            node.get("params"),
+            node=node,
+            message="RelationalNode params must be iterable",
+        )
+        result: set[str] = set()
+        for param in params:
+            child = self._ensure_mapping(
+                param,
+                node=node,
+                message="RelationalNode param must be object",
+            )
+            result.update(self.visit(child))
+        return result
+
 
 __all__ = [
     "IDENTIFIER_PATTERN",
+    "MATHJS_BUILTIN_SYMBOLS",
     "MathJsAstBuilder",
     "MathJsAstVisitor",
     "SymbolDependencyCollector",

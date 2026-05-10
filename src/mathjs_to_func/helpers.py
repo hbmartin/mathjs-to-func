@@ -25,7 +25,11 @@ HELPER_NAME_MAP = {
     "sqrt": "_mj_sqrt",
     "sum": "_mj_sum",
     "ifnull": "_mj_ifnull",
+    "nullish": "_mj_ifnull",
 }
+
+MATHJS_REL_TOL = 1e-12
+MATHJS_ABS_TOL = 1e-15
 
 
 def _expand_args(args: Sequence[object]) -> list[object]:
@@ -39,6 +43,8 @@ def _expand_args(args: Sequence[object]) -> list[object]:
 
 def _maybe_scalar(value: object) -> object:
     if isinstance(value, np.ndarray) and value.ndim == 0:
+        return cast("Any", value).item()
+    if isinstance(value, np.generic):
         return cast("Any", value).item()
     return value
 
@@ -178,6 +184,24 @@ def _mj_ifnull(value: object, fallback: object) -> object:
     return value
 
 
+def _mj_lazy_ifnull(value: object, fallback: Callable[[], object]) -> object:
+    if isinstance(value, np.ndarray):
+        try:
+            mask = np.isnan(value)
+        except TypeError:
+            return value
+        if mask.any():
+            return np.where(mask, np.asarray(fallback()), value)
+        return value
+    if value is None:
+        return fallback()
+    if isinstance(value, float) and np.isnan(value):
+        return fallback()
+    if isinstance(value, np.number):
+        return fallback() if np.isnan(value) else value
+    return value
+
+
 def _mj_abs(value: object) -> object:
     return _unary_numpy(np.abs, value)
 
@@ -236,28 +260,62 @@ def _mj_median(*args: object) -> object:
     return _maybe_scalar(np.median(np.asarray(values), axis=0))
 
 
+def _mj_close(left: object, right: object) -> object:
+    try:
+        return _maybe_scalar(
+            np.isclose(
+                cast("Any", left),
+                cast("Any", right),
+                rtol=MATHJS_REL_TOL,
+                atol=MATHJS_ABS_TOL,
+            ),
+        )
+    except (TypeError, ValueError):
+        return _binary_numpy(np.equal, left, right)
+
+
 def _mj_larger(left: object, right: object) -> object:
-    return _binary_numpy(np.greater, left, right)
+    return _maybe_scalar(
+        np.logical_and(
+            np.greater(cast("Any", left), cast("Any", right)),
+            np.logical_not(cast("Any", _mj_close(left, right))),
+        ),
+    )
 
 
 def _mj_larger_eq(left: object, right: object) -> object:
-    return _binary_numpy(np.greater_equal, left, right)
+    return _maybe_scalar(
+        np.logical_or(
+            np.greater(cast("Any", left), cast("Any", right)),
+            cast("Any", _mj_close(left, right)),
+        ),
+    )
 
 
 def _mj_smaller(left: object, right: object) -> object:
-    return _binary_numpy(np.less, left, right)
+    return _maybe_scalar(
+        np.logical_and(
+            np.less(cast("Any", left), cast("Any", right)),
+            np.logical_not(cast("Any", _mj_close(left, right))),
+        ),
+    )
 
 
 def _mj_smaller_eq(left: object, right: object) -> object:
-    return _binary_numpy(np.less_equal, left, right)
+    return _maybe_scalar(
+        np.logical_or(
+            np.less(cast("Any", left), cast("Any", right)),
+            cast("Any", _mj_close(left, right)),
+        ),
+    )
 
 
 def _mj_equal(left: object, right: object) -> object:
-    return _binary_numpy(np.equal, left, right)
+    return _mj_close(left, right)
 
 
 def _mj_unequal(left: object, right: object) -> object:
-    return _binary_numpy(np.not_equal, left, right)
+    return _maybe_scalar(np.logical_not(cast("Any", _mj_equal(left, right))))
 
 
 def _mj_and(left: object, right: object) -> object:
@@ -326,6 +384,49 @@ def _mj_lazy_where(
     return false_value()
 
 
+_RELATIONAL_HELPERS = {
+    "larger": _mj_larger,
+    "largerEq": _mj_larger_eq,
+    "smaller": _mj_smaller,
+    "smallerEq": _mj_smaller_eq,
+    "equal": _mj_equal,
+    "unequal": _mj_unequal,
+}
+
+
+def _mj_relational(
+    conditionals: Sequence[str],
+    *terms: Callable[[], object],
+) -> object:
+    if len(conditionals) != len(terms) - 1:
+        raise ValueError("RelationalNode requires one fewer conditional than params")
+
+    left = terms[0]()
+    result: object = True
+    vector_mode = False
+
+    for index, conditional in enumerate(conditionals):
+        try:
+            compare = _RELATIONAL_HELPERS[conditional]
+        except KeyError as exc:
+            msg = f"Unsupported relational conditional: {conditional}"
+            raise ValueError(msg) from exc
+        right = terms[index + 1]()
+        comparison = compare(left, right)
+
+        if _is_array_like(comparison):
+            result = np.logical_and(np.asarray(result), np.asarray(comparison))
+            vector_mode = True
+        elif vector_mode:
+            result = np.logical_and(np.asarray(result), cast("Any", comparison))
+        elif not comparison:
+            return False
+
+        left = right
+
+    return _maybe_scalar(result)
+
+
 HELPER_FUNCTIONS = {
     "_mj_abs": _mj_abs,
     "_mj_and": _mj_and,
@@ -352,6 +453,8 @@ HELPER_FUNCTIONS = {
     "_mj_sqrt": _mj_sqrt,
     "_mj_sum": _mj_sum,
     "_mj_ifnull": _mj_ifnull,
+    "_mj_lazy_ifnull": _mj_lazy_ifnull,
+    "_mj_relational": _mj_relational,
     "_mj_unequal": _mj_unequal,
     "_mj_where": _mj_where,
     "_mj_xor": _mj_xor,
@@ -360,6 +463,8 @@ HELPER_FUNCTIONS = {
 __all__ = [
     "HELPER_FUNCTIONS",
     "HELPER_NAME_MAP",
+    "MATHJS_ABS_TOL",
+    "MATHJS_REL_TOL",
     "_mj_abs",
     "_mj_and",
     "_mj_ceil",
@@ -370,6 +475,7 @@ __all__ = [
     "_mj_larger",
     "_mj_larger_eq",
     "_mj_lazy_and",
+    "_mj_lazy_ifnull",
     "_mj_lazy_or",
     "_mj_lazy_where",
     "_mj_log",
@@ -379,6 +485,7 @@ __all__ = [
     "_mj_min",
     "_mj_not",
     "_mj_or",
+    "_mj_relational",
     "_mj_round",
     "_mj_sign",
     "_mj_smaller",
