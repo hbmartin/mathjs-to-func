@@ -1,4 +1,5 @@
 import json
+import math
 
 import pytest
 
@@ -204,5 +205,24 @@ def test_parse_rejects_standalone_index_node():
         },
     )
 
-    with pytest.raises(ValueError, match="Invalid math.js JSON payload"):
+    with pytest.raises(ValueError, match=r"Invalid math.js JSON payload"):
         parse(payload)
+
+
+def test_parse_non_finite_constants_work_with_build_evaluator():
+    expressions = {
+        "pos": parse('{"type":"ConstantNode","value":Infinity,"valueType":"number"}'),
+        "nan": parse('{"type":"ConstantNode","value":NaN,"valueType":"number"}'),
+        "res": {
+            "type": "ArrayNode",
+            "items": [
+                {"type": "SymbolNode", "name": "pos"},
+                {"type": "SymbolNode", "name": "nan"},
+            ],
+        },
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+
+    result = evaluator({})
+    assert math.isinf(result[0])
+    assert math.isnan(result[1])

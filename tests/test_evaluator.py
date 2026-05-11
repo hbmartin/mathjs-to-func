@@ -11,6 +11,7 @@ from mathjs_to_func import (
     InputValidationError,
     InvalidNodeError,
     MissingTargetError,
+    RuntimeEvaluationError,
     UnknownIdentifierError,
     build_evaluator,
 )
@@ -78,6 +79,13 @@ def accessor(obj, *dimensions):
 
 def object_node(**properties: object):
     return {"type": "ObjectNode", "properties": properties}
+
+
+def assert_runtime_cause(excinfo, cause_type, message: str):
+    cause = excinfo.value.__cause__
+    assert excinfo.value.expression == "res"
+    assert isinstance(cause, cause_type)
+    assert message in str(cause)
 
 
 @pytest.mark.parametrize(
@@ -840,8 +848,13 @@ def test_mean_and_median_reject_empty_single_array_like(fn_name):
     expressions = {"res": func(fn_name, symbol("x"))}
     evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
 
-    with pytest.raises(ValueError, match=f"{fn_name} requires at least one argument"):
+    with pytest.raises(RuntimeEvaluationError) as excinfo:
         evaluator({"x": np.array([])})
+    assert_runtime_cause(
+        excinfo,
+        ValueError,
+        f"{fn_name} requires at least one argument",
+    )
 
 
 def test_scalar_and_short_circuits_right_operand():
@@ -1373,7 +1386,9 @@ def test_const_with_numeric_string():
         (func("atanh", const(0)), 0),
         (func("log2", const(8)), 3),
         (func("log10", const(100)), 2),
+        (func("log", const(10000), const(10)), 4),
         (func("log1p", const(1)), math.log(2)),
+        (func("log1p", const(9999), const(10)), 4),
         (func("cbrt", const(27)), 3),
         (func("hypot", const(3), const(4)), 5),
         (func("clamp", const(10), const(0), const(5)), 5),
@@ -1457,8 +1472,9 @@ def test_gcd_rejects_non_integer_floats():
         target="res",
     )
 
-    with pytest.raises(ValueError, match="gcd requires integer arguments"):
+    with pytest.raises(RuntimeEvaluationError) as excinfo:
         evaluator({"x": 1.5})
+    assert_runtime_cause(excinfo, ValueError, "gcd requires integer arguments")
 
 
 def test_integer_helpers_reject_infinity_with_value_error():
@@ -1468,8 +1484,9 @@ def test_integer_helpers_reject_infinity_with_value_error():
         target="res",
     )
 
-    with pytest.raises(ValueError, match="factorial requires integer arguments"):
+    with pytest.raises(RuntimeEvaluationError) as excinfo:
         evaluator({"x": float("inf")})
+    assert_runtime_cause(excinfo, ValueError, "factorial requires integer arguments")
 
 
 def test_v05_function_expansion_vectorizes_common_helpers():
@@ -1591,8 +1608,9 @@ def test_accessor_node_rejects_indices_below_one(bad_index):
         target="res",
     )
 
-    with pytest.raises(ValueError, match="IndexNode indices must be >= 1"):
+    with pytest.raises(RuntimeEvaluationError) as excinfo:
         evaluator({"vec": [10, 20, 30], "i": bad_index})
+    assert_runtime_cause(excinfo, ValueError, "IndexNode indices must be >= 1")
 
 
 def test_accessor_node_handles_numpy_multidimensional_indices():
@@ -1622,8 +1640,9 @@ def test_accessor_node_rejects_range_indices_below_one(bad_range):
     expressions = {"res": accessor(symbol("vec"), bad_range)}
     evaluator = build_evaluator(expressions=expressions, inputs=["vec"], target="res")
 
-    with pytest.raises(ValueError, match="RangeNode indices must be >= 1"):
+    with pytest.raises(RuntimeEvaluationError) as excinfo:
         evaluator({"vec": [10, 20, 30]})
+    assert_runtime_cause(excinfo, ValueError, "RangeNode indices must be >= 1")
 
 
 def test_range_node_materializes_inclusive_ranges():
@@ -1641,8 +1660,9 @@ def test_range_node_materializes_inclusive_ranges():
 def test_range_node_rejects_zero_step():
     expressions = {"res": range_node(const(1), const(3), const(0))}
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
-    with pytest.raises(ValueError, match="step cannot be zero"):
+    with pytest.raises(RuntimeEvaluationError) as excinfo:
         evaluator({})
+    assert_runtime_cause(excinfo, ValueError, "step cannot be zero")
 
 
 @pytest.mark.parametrize(
@@ -1650,6 +1670,9 @@ def test_range_node_rejects_zero_step():
     [
         func("sin", const(1), const(2)),
         func("factorial", const(5), const(6)),
+        func("log"),
+        func("log", const(1), const(2), const(3)),
+        func("log1p", const(1), const(2), const(3)),
         func("log2", const(1), const(2)),
         func("round"),
         func("permutations"),
@@ -1685,3 +1708,207 @@ def test_block_node_remains_unsupported():
     expressions = {"res": {"type": "BlockNode", "blocks": []}}
     with pytest.raises(InvalidNodeError):
         build_evaluator(expressions=expressions, inputs=[], target="res")
+
+
+def test_log_optional_base_broadcasts_over_arrays():
+    evaluator = build_evaluator(
+        expressions={"res": func("log", symbol("x"), symbol("base"))},
+        inputs=["x", "base"],
+        target="res",
+    )
+
+    np.testing.assert_allclose(
+        evaluator({"x": np.array([8, 27, 10000]), "base": np.array([2, 3, 10])}),
+        [3, 3, 4],
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["set", "Mapping", "scope", "_missing", "_extra", "_mj_sum"],
+)
+def test_collision_prone_input_identifiers_are_allowed(name):
+    evaluator = build_evaluator(
+        expressions={"res": symbol(name)},
+        inputs=[name],
+        target="res",
+    )
+
+    assert evaluator({name: 7}) == 7
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["set", "Mapping", "scope", "_missing", "_extra", "_mj_sum"],
+)
+def test_collision_prone_expression_identifiers_are_allowed(name):
+    evaluator = build_evaluator(
+        expressions={
+            name: func("sum", const(1), const(2)),
+            "res": op("add", symbol(name), const(4)),
+        },
+        inputs=[],
+        target="res",
+    )
+
+    assert evaluator({}) == 7
+
+
+def test_reserved_internal_prefix_is_rejected_for_inputs():
+    with pytest.raises(InvalidNodeError, match="reserved internal prefix"):
+        build_evaluator(
+            expressions={"res": const(1)},
+            inputs=["__mj_input"],
+            target="res",
+        )
+
+
+def test_reserved_internal_prefix_is_rejected_for_expression_ids():
+    with pytest.raises(InvalidNodeError, match="reserved internal prefix"):
+        build_evaluator(
+            expressions={"__mj_expr": const(1), "res": const(2)},
+            inputs=[],
+            target="res",
+        )
+
+
+def test_reserved_internal_prefix_is_rejected_for_targets():
+    with pytest.raises(InvalidNodeError, match="reserved internal prefix"):
+        build_evaluator(
+            expressions={"res": const(1)},
+            inputs=[],
+            target="__mj_target",
+        )
+
+
+def test_round_supports_scalar_and_negative_decimals():
+    expressions = {
+        "one": func("round", const(1.2345), const(2)),
+        "two": func("round", const(1234.5), const(-2)),
+        "res": array(symbol("one"), symbol("two")),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+
+    np.testing.assert_allclose(evaluator({}), [1.23, 1200])
+
+
+def test_round_broadcasts_array_decimals():
+    evaluator = build_evaluator(
+        expressions={"res": func("round", symbol("x"), symbol("places"))},
+        inputs=["x", "places"],
+        target="res",
+    )
+
+    np.testing.assert_allclose(
+        evaluator(
+            {
+                "x": np.array([1.234, 5.678, 9.876]),
+                "places": np.array([1, 2, -1]),
+            },
+        ),
+        [1.2, 5.68, 10],
+    )
+    np.testing.assert_allclose(
+        evaluator({"x": 1.2345, "places": np.array([1, 3])}),
+        [1.2, 1.234],
+    )
+
+
+def test_round_rejects_non_integer_scalar_decimals_at_runtime():
+    evaluator = build_evaluator(
+        expressions={"res": func("round", symbol("x"), symbol("places"))},
+        inputs=["x", "places"],
+        target="res",
+    )
+
+    with pytest.raises(RuntimeEvaluationError) as excinfo:
+        evaluator({"x": 1.2345, "places": 1.5})
+    assert_runtime_cause(excinfo, ValueError, "round requires integer arguments")
+
+
+def test_non_finite_raw_number_constants_are_supported():
+    evaluator = build_evaluator(
+        expressions={
+            "pos": {
+                "type": "ConstantNode",
+                "value": float("inf"),
+                "valueType": "number",
+            },
+            "neg": {
+                "type": "ConstantNode",
+                "value": float("-inf"),
+                "valueType": "number",
+            },
+            "nan": {
+                "type": "ConstantNode",
+                "value": float("nan"),
+                "valueType": "number",
+            },
+            "res": array(symbol("pos"), symbol("neg"), symbol("nan")),
+        },
+        inputs=[],
+        target="res",
+    )
+
+    result = evaluator({})
+    assert math.isinf(result[0])
+    assert result[0] > 0
+    assert math.isinf(result[1])
+    assert result[1] < 0
+    assert math.isnan(result[2])
+
+
+def test_non_finite_string_number_constants_are_supported():
+    evaluator = build_evaluator(
+        expressions={
+            "pos": const("Infinity"),
+            "neg": const("-inf"),
+            "nan": const("NaN"),
+            "res": array(symbol("pos"), symbol("neg"), symbol("nan")),
+        },
+        inputs=[],
+        target="res",
+    )
+
+    result = evaluator({})
+    assert math.isinf(result[0])
+    assert result[0] > 0
+    assert math.isinf(result[1])
+    assert result[1] < 0
+    assert math.isnan(result[2])
+
+
+def test_runtime_errors_preserve_failing_expression_name_and_cause():
+    evaluator = build_evaluator(
+        expressions={
+            "bad": op("divide", const(1), const(0)),
+            "res": op("add", symbol("bad"), const(1)),
+        },
+        inputs=[],
+        target="res",
+    )
+
+    with pytest.raises(RuntimeEvaluationError) as excinfo:
+        evaluator({})
+    assert excinfo.value.expression == "bad"
+    assert isinstance(excinfo.value.__cause__, ZeroDivisionError)
+
+
+def test_compiled_globals_keep_builtin_escape_hatches_unreachable():
+    evaluator = build_evaluator(expressions={"res": const(1)}, inputs=[], target="res")
+
+    assert evaluator.__globals__["__builtins__"] == {}
+    for name in ("__import__", "eval", "getattr"):
+        assert name not in evaluator.__globals__
+    assert "_mj_sum" not in evaluator.__globals__
+    assert "__mj_sum" in evaluator.__globals__
+
+
+@pytest.mark.parametrize("fn_name", ["__import__", "eval", "getattr"])
+def test_builtin_escape_function_calls_are_rejected(fn_name):
+    with pytest.raises(InvalidNodeError):
+        build_evaluator(
+            expressions={"res": func(fn_name, const(1))},
+            inputs=[],
+            target="res",
+        )

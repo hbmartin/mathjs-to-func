@@ -58,3 +58,7 @@ class InvalidNodeError(ExpressionError):
 
 class InputValidationError(ExpressionError):
     """Raised when inputs passed to the compiled function are invalid."""
+
+
+class RuntimeEvaluationError(ExpressionError):
+    """Raised when an expression fails while evaluating a compiled function."""

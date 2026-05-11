@@ -13,7 +13,7 @@ Primary math.js references:
 
 | Node | Status | Notes |
 |------|--------|-------|
-| `ConstantNode` | Supported | `number`, `boolean`, and `null`. String constants are not supported. |
+| `ConstantNode` | Supported | `number`, `boolean`, and `null`. Numeric constants may include `Infinity`, `-Infinity`, and `NaN`. String constants are not supported. |
 | `SymbolNode` | Supported | Resolves inputs, other expression ids, and common built-in constants. Inputs/expressions override built-ins. |
 | `OperatorNode` | Supported subset | Arithmetic, unary plus/minus, logical, relational, and `nullish`. See operator table below. |
 | `FunctionNode` | Supported subset | Whitelisted numeric/statistical/nullish helpers plus operator function aliases. Custom functions and raw argument functions are not supported. |
@@ -66,8 +66,8 @@ Primary math.js references:
 | `phi` | Supported | Golden ratio |
 | `LN2`, `LN10`, `LOG2E`, `LOG10E` | Supported | `math.log`/`math.log2`/`math.log10` equivalents |
 | `SQRT1_2`, `SQRT2` | Supported | Square-root constants |
-| `Infinity` | Supported | `math.inf` |
-| `NaN` | Supported | `math.nan` |
+| `Infinity` | Supported | `math.inf`; supported as either a symbol or numeric constant literal |
+| `NaN` | Supported | `math.nan`; supported as either a symbol or numeric constant literal |
 | `i` | Supported | Python `1j` |
 | `null`, `undefined` | Supported | `None` |
 | `version` | Not supported | A compiled Python evaluator does not know the source math.js runtime version. |
@@ -86,3 +86,4 @@ Primary math.js references:
 - Evaluators are pure functions over a provided mapping; math.js assignment and parser scope mutation are not implemented.
 - Unknown symbols fail at compile time unless they are declared inputs, expression ids, or supported built-in constants.
 - Generated code executes with a deliberately small globals dictionary and no ambient builtins.
+- User-provided identifiers may not use the reserved `__mj_` prefix, which is used for generated runtime internals.

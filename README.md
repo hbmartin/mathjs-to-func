@@ -112,6 +112,7 @@ See [docs/compatibility.md](docs/compatibility.md) for the fuller math.js compat
 - `CircularDependencyError`: dependency graph contains a cycle.
 - `InvalidNodeError`: AST contains unsupported structures or invalid literals.
 - `InputValidationError`: the compiled function received inputs that are missing, unexpected, or not a mapping.
+- `RuntimeEvaluationError`: a compiled expression failed at runtime; the original exception is preserved as `__cause__`.
 
 All exceptions provide enough context (`expression` name, offending identifier, cycle list, etc.) to surface descriptive UI errors.
 
@@ -167,10 +168,10 @@ The default schema covers a complete evaluator payload (`expressions`, `inputs`,
 
 ## Implementation Notes
 
-1. **AST translation** – `MathJsAstBuilder` walks the math.js JSON and emits Python `ast.AST` nodes. Identifiers are validated via a strict regex to prevent sneaky names like `__import__`.
+1. **AST translation** – `MathJsAstBuilder` walks the math.js JSON and emits Python `ast.AST` nodes. Identifiers are validated via a strict regex, and the generated runtime reserves the `__mj_` prefix for internal names.
 2. **Dependency graph** – A topological sorter (`graphlib.TopologicalSorter`) runs over expression references to produce a safe evaluation order while catching cycles and missing references upfront.
 3. **Code generation** – The generated function validates the provided scope, binds required inputs to local variables, evaluates expressions in order, and returns the target. Intermediate values are stored as local variables named after their expression id.
-4. **Execution sandbox** – The compiled module is executed with a tightly scoped globals dictionary: helper math functions, NumPy, and a few safe built-ins only. There is no ambient `__builtins__` exposure.
+4. **Execution sandbox** – The compiled module is executed with a tightly scoped globals dictionary: helper math functions and a few safe built-ins only. There is no ambient `__builtins__` exposure.
 5. **Helper functions** – math.js functions map onto small Python helpers for arithmetic, comparison, logical, nullish, and statistics behavior. Equality and ordering use math.js-style default tolerances for numeric round-off.
 
 ## Testing
