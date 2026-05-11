@@ -79,10 +79,27 @@ def main():
 |---------------|------------------------------------|-------------|
 | `expressions` | `Mapping[str, Mapping[str, Any]]`   | math.js AST JSON keyed by expression id. Each id becomes a local variable in the compiled function. |
 | `inputs`      | `Iterable[str]`                     | Whitelisted identifiers that may be supplied when the function is invoked. |
-| `target`      | `str`                               | Name of the expression whose computed value should be returned. |
-| `include_source` | `bool` (optional)                 | Attach the generated Python source code as `__mathjs_source__` on the returned callable. |
+| `target`      | `str \| Sequence[str]`              | Name of the expression to return, or multiple expression names to return as a `dict[str, Any]`. |
+| `config`      | `EvalConfig \| Mapping[str, object]` (optional) | Per-evaluator runtime options. `rel_tol`, `abs_tol`, and math.js-style `epsilon` control comparison tolerances. |
+| `compile_cache` | `bool` (optional)                | Reuse compiled functions through an opt-in canonical JSON LRU cache. |
+| `include_source` | `bool` (optional)              | Attach executable generated Python source code as `__mathjs_source__` on the returned callable. |
 
 The returned callable always expects a single mapping argument with the provided inputs. It returns the evaluated `target` value and may be reused across invocations.
+
+When `target` is a sequence, the callable returns a mapping in the requested target order:
+
+```python
+evaluator = build_evaluator(expressions=exprs, inputs=["x"], target=["low", "high"])
+assert evaluator({"x": 10}) == {"low": 8, "high": 12}
+```
+
+The source string includes the import preamble needed to re-execute it in an environment where `mathjs_to_func` is installed:
+
+```python
+namespace = {}
+exec(evaluator.__mathjs_source__, namespace)
+assert namespace["_compiled"]({"x": 10}) == evaluator({"x": 10})
+```
 
 ### Supported math.js nodes
 
@@ -144,6 +161,18 @@ evaluator = build_evaluator(
 result = evaluator({"x": 40})  # -> 42
 ```
 
+For complete `{expressions, inputs, target}` envelopes, use `parse_payload`:
+
+```python
+from mathjs_to_func import build_evaluator
+from mathjs_to_func.parse import parse_payload
+
+payload = parse_payload(serialized_payload)
+evaluator = build_evaluator(payload=payload)
+```
+
+The parser also exposes Pydantic models such as `ConstantNode`, `SymbolNode`, and `OperatorNode` for typed payload construction. math.js replacer values such as `Complex`, `Unit`, `BigNumber`, and `Fraction` are rejected with explicit unsupported-value errors until those runtime types are implemented.
+
 All examples below assume commands are wrapped with `uv run ...` to execute inside the managed environment.
 
 ## CLI
@@ -172,7 +201,7 @@ The default schema covers a complete evaluator payload (`expressions`, `inputs`,
 2. **Dependency graph** – A topological sorter (`graphlib.TopologicalSorter`) runs over expression references to produce a safe evaluation order while catching cycles and missing references upfront.
 3. **Code generation** – The generated function validates the provided scope, binds required inputs to local variables, evaluates expressions in order, and returns the target. Intermediate values are stored as local variables named after their expression id.
 4. **Execution sandbox** – The compiled module is executed with a tightly scoped globals dictionary: helper math functions and a few safe built-ins only. There is no ambient `__builtins__` exposure.
-5. **Helper functions** – math.js functions map onto small Python helpers for arithmetic, comparison, logical, nullish, and statistics behavior. Equality and ordering use math.js-style default tolerances for numeric round-off.
+5. **Helper functions** – math.js functions map onto small Python helpers for arithmetic, comparison, logical, nullish, and statistics behavior. Equality and ordering use math.js-style default tolerances for numeric round-off, configurable per evaluator with `EvalConfig` or `{"epsilon": ...}`.
 
 ## Testing
 

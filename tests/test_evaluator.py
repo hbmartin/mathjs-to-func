@@ -7,6 +7,7 @@ import pytest
 
 from mathjs_to_func import (
     CircularDependencyError,
+    EvalConfig,
     ExpressionError,
     InputValidationError,
     InvalidNodeError,
@@ -348,6 +349,21 @@ def test_include_source_attribute():
     assert "def _compiled" in evaluator.__mathjs_source__
 
 
+def test_include_source_is_executable():
+    expressions = {"res": op("add", symbol("x"), const(2))}
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["x"],
+        target="res",
+        include_source=True,
+    )
+
+    namespace = {}
+    exec(evaluator.__mathjs_source__, namespace)  # noqa: S102
+
+    assert namespace["_compiled"]({"x": 40}) == 42
+
+
 def test_include_source_absent_by_default():
     expressions = {"res": op("add", const(1), const(2))}
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
@@ -362,6 +378,70 @@ def test_payload_argument():
     }
     evaluator = build_evaluator(payload=payload)
     assert evaluator({}) == 10
+
+
+def test_multiple_targets_return_mapping_from_shared_graph():
+    expressions = {
+        "sum_ab": op("add", symbol("a"), symbol("b")),
+        "delta": op("subtract", symbol("a"), symbol("b")),
+        "weighted": op("multiply", symbol("sum_ab"), symbol("weight")),
+        "unused": op("divide", const(1), const(0)),
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["a", "b", "weight"],
+        target=["sum_ab", "weighted", "delta"],
+    )
+
+    assert evaluator({"a": 10, "b": 6, "weight": 3}) == {
+        "sum_ab": 16,
+        "weighted": 48,
+        "delta": 4,
+    }
+    assert evaluator.__mathjs_targets__ == ("sum_ab", "weighted", "delta")
+    assert evaluator.__mathjs_evaluation_order__ == ("delta", "sum_ab", "weighted")
+
+
+def test_single_target_sequence_returns_mapping():
+    evaluator = build_evaluator(
+        expressions={"res": op("add", const(1), const(2))},
+        inputs=[],
+        target=["res"],
+    )
+
+    assert evaluator({}) == {"res": 3}
+
+
+def test_duplicate_multiple_targets_are_rejected():
+    with pytest.raises(ExpressionError, match="Duplicate target identifier"):
+        build_evaluator(
+            expressions={"res": const(1)},
+            inputs=[],
+            target=["res", "res"],
+        )
+
+
+def test_compile_cache_reuses_compiled_code_without_source_leakage():
+    expressions = {"res": op("add", symbol("x"), const(1))}
+    first = build_evaluator(
+        expressions=expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        include_source=True,
+    )
+    second = build_evaluator(
+        expressions=expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+    )
+
+    assert first is not second
+    assert first.__code__ is second.__code__
+    assert hasattr(first, "__mathjs_source__")
+    assert not hasattr(second, "__mathjs_source__")
+    assert second({"x": 4}) == 5
 
 
 def test_missing_target_error():
@@ -691,6 +771,39 @@ def test_mathjs_equal_uses_default_tolerances():
     evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
 
     assert evaluator({}) is True
+
+
+def test_eval_config_can_make_equal_strict():
+    expressions = {
+        "value": op("add", const(0.1), const(0.2)),
+        "res": op("equal", symbol("value"), const(0.3)),
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=[],
+        target="res",
+        config=EvalConfig(rel_tol=0, abs_tol=0),
+    )
+
+    assert evaluator({}) is False
+    assert evaluator.__mathjs_config__ == EvalConfig(rel_tol=0, abs_tol=0)
+
+
+def test_eval_config_mapping_epsilon_controls_relational_helpers():
+    expressions = {
+        "equal": op("equal", symbol("x"), const(0.3)),
+        "larger": op("larger", symbol("x"), const(0.3)),
+        "chain": relational(["smaller", "smaller"], const(0), symbol("x"), const(1)),
+        "res": array(symbol("equal"), symbol("larger"), symbol("chain")),
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["x"],
+        target="res",
+        config={"epsilon": 0.1},
+    )
+
+    assert evaluator({"x": 0.31}) == [True, False, True]
 
 
 def test_mathjs_relational_operators_use_default_tolerances():

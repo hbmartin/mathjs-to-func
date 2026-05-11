@@ -48,6 +48,8 @@ class _MathjsBaseModel(BaseModel):
 
 
 class ConstantNode(_MathjsBaseModel):
+    """math.js constant literal node."""
+
     type: Literal["ConstantNode"] = Field(
         default="ConstantNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -58,6 +60,8 @@ class ConstantNode(_MathjsBaseModel):
 
 
 class SymbolNode(_MathjsBaseModel):
+    """math.js symbol reference node."""
+
     type: Literal["SymbolNode"] = Field(
         default="SymbolNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -67,6 +71,8 @@ class SymbolNode(_MathjsBaseModel):
 
 
 class ParenthesisNode(_MathjsBaseModel):
+    """math.js parenthesized expression node."""
+
     type: Literal["ParenthesisNode"] = Field(
         default="ParenthesisNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -79,6 +85,8 @@ class ParenthesisNode(_MathjsBaseModel):
 
 
 class OperatorNode(_MathjsBaseModel):
+    """math.js operator expression node."""
+
     type: Literal["OperatorNode"] = Field(
         default="OperatorNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -90,6 +98,8 @@ class OperatorNode(_MathjsBaseModel):
 
 
 class FunctionNode(_MathjsBaseModel):
+    """math.js function call node."""
+
     type: Literal["FunctionNode"] = Field(
         default="FunctionNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -100,6 +110,8 @@ class FunctionNode(_MathjsBaseModel):
 
 
 class ArrayNode(_MathjsBaseModel):
+    """math.js array literal node."""
+
     type: Literal["ArrayNode"] = Field(
         default="ArrayNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -109,6 +121,8 @@ class ArrayNode(_MathjsBaseModel):
 
 
 class RangeNode(_MathjsBaseModel):
+    """math.js range expression node."""
+
     type: Literal["RangeNode"] = Field(
         default="RangeNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -120,6 +134,8 @@ class RangeNode(_MathjsBaseModel):
 
 
 class IndexNode(_MathjsBaseModel):
+    """math.js accessor index node."""
+
     type: Literal["IndexNode"] = Field(
         default="IndexNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -130,6 +146,8 @@ class IndexNode(_MathjsBaseModel):
 
 
 class AccessorNode(_MathjsBaseModel):
+    """math.js read-only accessor node."""
+
     type: Literal["AccessorNode"] = Field(
         default="AccessorNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -140,6 +158,8 @@ class AccessorNode(_MathjsBaseModel):
 
 
 class ObjectNode(_MathjsBaseModel):
+    """math.js object literal node."""
+
     type: Literal["ObjectNode"] = Field(
         default="ObjectNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -149,6 +169,8 @@ class ObjectNode(_MathjsBaseModel):
 
 
 class ConditionalNode(_MathjsBaseModel):
+    """math.js ternary conditional node."""
+
     type: Literal["ConditionalNode"] = Field(
         default="ConditionalNode",
         validation_alias=AliasChoices("type", "mathjs"),
@@ -160,6 +182,8 @@ class ConditionalNode(_MathjsBaseModel):
 
 
 class RelationalNode(_MathjsBaseModel):
+    """math.js chained relational comparison node."""
+
     type: Literal["RelationalNode"] = Field(
         default="RelationalNode",
         validation_alias=AliasChoices("type", "mathjs"),

@@ -4,7 +4,13 @@ import math
 import pytest
 
 from mathjs_to_func import build_evaluator
-from mathjs_to_func.parse import parse
+from mathjs_to_func.parse import (
+    ConstantNode,
+    OperatorNode,
+    SymbolNode,
+    parse,
+    parse_payload,
+)
 
 
 def test_parse_constant_node():
@@ -226,3 +232,86 @@ def test_parse_non_finite_constants_work_with_build_evaluator():
     result = evaluator({})
     assert math.isinf(result[0])
     assert math.isnan(result[1])
+
+
+def test_parse_payload_validates_complete_envelope_with_multiple_targets():
+    payload = json.dumps(
+        {
+            "expressions": {
+                "total": {
+                    "type": "OperatorNode",
+                    "fn": "add",
+                    "args": [
+                        {"type": "SymbolNode", "name": "x"},
+                        {"type": "ConstantNode", "value": "2", "valueType": "number"},
+                    ],
+                },
+                "double": {
+                    "type": "OperatorNode",
+                    "fn": "multiply",
+                    "args": [
+                        {"type": "SymbolNode", "name": "total"},
+                        {"type": "ConstantNode", "value": "2", "valueType": "number"},
+                    ],
+                },
+            },
+            "inputs": ["x"],
+            "target": ["total", "double"],
+        },
+    )
+
+    parsed = parse_payload(payload)
+    evaluator = build_evaluator(payload=parsed)
+
+    assert evaluator({"x": 40}) == {"total": 42, "double": 84}
+
+
+def test_public_pydantic_models_can_build_expression_payloads():
+    expression = OperatorNode(
+        fn="add",
+        args=[
+            SymbolNode(name="x"),
+            ConstantNode(value="2", valueType="number"),
+        ],
+    )
+
+    evaluator = build_evaluator(
+        expressions={"res": expression.as_ast()},
+        inputs=["x"],
+        target="res",
+    )
+
+    assert evaluator({"x": 40}) == 42
+
+
+@pytest.mark.parametrize("mathjs_type", ["BigNumber", "Complex", "Fraction", "Unit"])
+def test_parse_rejects_mathjs_replacer_values_with_clear_error(mathjs_type):
+    payload = json.dumps({"mathjs": mathjs_type, "value": "2"})
+
+    with pytest.raises(
+        ValueError,
+        match=f"Unsupported math.js serialized value type: {mathjs_type}",
+    ):
+        parse(payload)
+
+
+def test_parse_payload_rejects_nested_mathjs_replacer_values_with_clear_error():
+    payload = json.dumps(
+        {
+            "expressions": {
+                "res": {
+                    "type": "ConstantNode",
+                    "value": {"mathjs": "Complex", "re": 2, "im": 3},
+                    "valueType": "number",
+                },
+            },
+            "inputs": [],
+            "target": "res",
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Unsupported math.js serialized value type: Complex",
+    ):
+        parse_payload(payload)

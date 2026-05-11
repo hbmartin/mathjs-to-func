@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Iterable, Mapping, Sequence
 from functools import lru_cache
 from types import FunctionType
-from typing import Any, Literal, Protocol, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping, Sequence
 
 from .compiler import CompilationResult, compile_to_callable
 from .errors import (
@@ -39,6 +41,8 @@ __all__ = [
 class CompiledEvaluator(Protocol):
     """Callable returned by :func:`build_evaluator` with metadata attributes."""
 
+    __code__: Any
+    __globals__: dict[str, Any]
     __mathjs_config__: EvalConfig
     __mathjs_required_inputs__: tuple[str, ...]
     __mathjs_evaluation_order__: tuple[str, ...]
@@ -215,7 +219,7 @@ def build_evaluator(
 ) -> CompiledEvaluator | CompiledEvaluatorWithSource: ...
 
 
-def build_evaluator(
+def build_evaluator(  # noqa: PLR0913
     expressions: Mapping[str, Any] | None = None,
     inputs: Iterable[str] | None = None,
     target: str | Sequence[str] | None = None,
