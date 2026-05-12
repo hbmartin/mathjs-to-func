@@ -60,6 +60,7 @@ def _ensure_user_identifier(name: str, *, expression: str | None) -> str:
 
 
 def normalise_inputs(inputs: Iterable[str]) -> tuple[str, ...]:
+    """Validate and normalise a collection of input identifier names."""
     seen: set[str] = set()
     ordered: list[str] = []
     for raw in inputs:
