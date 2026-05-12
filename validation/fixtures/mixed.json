@@ -1,0 +1,129 @@
+[
+  {
+    "name": "compound_arithmetic",
+    "expression": "(a + b) * sqrt(c) - log(d)",
+    "scope": {
+      "a": 1,
+      "b": 3,
+      "c": 16,
+      "d": 2.718281828459045
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "-",
+      "fn": "subtract",
+      "args": [
+        {
+          "mathjs": "OperatorNode",
+          "op": "*",
+          "fn": "multiply",
+          "args": [
+            {
+              "mathjs": "ParenthesisNode",
+              "content": {
+                "mathjs": "OperatorNode",
+                "op": "+",
+                "fn": "add",
+                "args": [
+                  {
+                    "mathjs": "SymbolNode",
+                    "name": "a"
+                  },
+                  {
+                    "mathjs": "SymbolNode",
+                    "name": "b"
+                  }
+                ],
+                "implicit": false,
+                "isPercentage": false
+              }
+            },
+            {
+              "mathjs": "FunctionNode",
+              "fn": {
+                "mathjs": "SymbolNode",
+                "name": "sqrt"
+              },
+              "args": [
+                {
+                  "mathjs": "SymbolNode",
+                  "name": "c"
+                }
+              ]
+            }
+          ],
+          "implicit": false,
+          "isPercentage": false
+        },
+        {
+          "mathjs": "FunctionNode",
+          "fn": {
+            "mathjs": "SymbolNode",
+            "name": "log"
+          },
+          "args": [
+            {
+              "mathjs": "SymbolNode",
+              "name": "d"
+            }
+          ]
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 15
+  },
+  {
+    "name": "min_plus_max",
+    "expression": "min(a, b) + max(a, b)",
+    "scope": {
+      "a": 7,
+      "b": 3
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "+",
+      "fn": "add",
+      "args": [
+        {
+          "mathjs": "FunctionNode",
+          "fn": {
+            "mathjs": "SymbolNode",
+            "name": "min"
+          },
+          "args": [
+            {
+              "mathjs": "SymbolNode",
+              "name": "a"
+            },
+            {
+              "mathjs": "SymbolNode",
+              "name": "b"
+            }
+          ]
+        },
+        {
+          "mathjs": "FunctionNode",
+          "fn": {
+            "mathjs": "SymbolNode",
+            "name": "max"
+          },
+          "args": [
+            {
+              "mathjs": "SymbolNode",
+              "name": "a"
+            },
+            {
+              "mathjs": "SymbolNode",
+              "name": "b"
+            }
+          ]
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 10
+  }
+]

@@ -1,0 +1,161 @@
+[
+  {
+    "name": "sum_array_literal",
+    "expression": "sum([1, 2, 3])",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "sum"
+      },
+      "args": [
+        {
+          "mathjs": "ArrayNode",
+          "items": [
+            {
+              "mathjs": "ConstantNode",
+              "value": 1
+            },
+            {
+              "mathjs": "ConstantNode",
+              "value": 2
+            },
+            {
+              "mathjs": "ConstantNode",
+              "value": 3
+            }
+          ]
+        }
+      ]
+    },
+    "expected": 6
+  },
+  {
+    "name": "mean_array_inputs",
+    "expression": "mean([a, b, c])",
+    "scope": {
+      "a": 2,
+      "b": 4,
+      "c": 6
+    },
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "mean"
+      },
+      "args": [
+        {
+          "mathjs": "ArrayNode",
+          "items": [
+            {
+              "mathjs": "SymbolNode",
+              "name": "a"
+            },
+            {
+              "mathjs": "SymbolNode",
+              "name": "b"
+            },
+            {
+              "mathjs": "SymbolNode",
+              "name": "c"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": 4
+  },
+  {
+    "name": "min_variadic",
+    "expression": "min(1, 2, 3)",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "min"
+      },
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 1
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 2
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 3
+        }
+      ]
+    },
+    "expected": 1
+  },
+  {
+    "name": "max_array_literal",
+    "expression": "max([5, 9])",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "max"
+      },
+      "args": [
+        {
+          "mathjs": "ArrayNode",
+          "items": [
+            {
+              "mathjs": "ConstantNode",
+              "value": 5
+            },
+            {
+              "mathjs": "ConstantNode",
+              "value": 9
+            }
+          ]
+        }
+      ]
+    },
+    "expected": 9
+  },
+  {
+    "name": "median_array_literal",
+    "expression": "median([1, 2, 3, 4])",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "FunctionNode",
+      "fn": {
+        "mathjs": "SymbolNode",
+        "name": "median"
+      },
+      "args": [
+        {
+          "mathjs": "ArrayNode",
+          "items": [
+            {
+              "mathjs": "ConstantNode",
+              "value": 1
+            },
+            {
+              "mathjs": "ConstantNode",
+              "value": 2
+            },
+            {
+              "mathjs": "ConstantNode",
+              "value": 3
+            },
+            {
+              "mathjs": "ConstantNode",
+              "value": 4
+            }
+          ]
+        }
+      ]
+    },
+    "expected": 2.5
+  }
+]

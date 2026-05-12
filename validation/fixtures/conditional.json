@@ -1,0 +1,47 @@
+[
+  {
+    "name": "abs_via_ternary",
+    "expression": "x > 0 ? x : -x",
+    "scope": {
+      "x": -4
+    },
+    "mathjs_json": {
+      "mathjs": "ConditionalNode",
+      "condition": {
+        "mathjs": "OperatorNode",
+        "op": ">",
+        "fn": "larger",
+        "args": [
+          {
+            "mathjs": "SymbolNode",
+            "name": "x"
+          },
+          {
+            "mathjs": "ConstantNode",
+            "value": 0
+          }
+        ],
+        "implicit": false,
+        "isPercentage": false
+      },
+      "trueExpr": {
+        "mathjs": "SymbolNode",
+        "name": "x"
+      },
+      "falseExpr": {
+        "mathjs": "OperatorNode",
+        "op": "-",
+        "fn": "unaryMinus",
+        "args": [
+          {
+            "mathjs": "SymbolNode",
+            "name": "x"
+          }
+        ],
+        "implicit": false,
+        "isPercentage": false
+      }
+    },
+    "expected": 4
+  }
+]

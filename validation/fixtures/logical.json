@@ -1,0 +1,80 @@
+[
+  {
+    "name": "logical_and_truthy",
+    "expression": "a and b",
+    "scope": {
+      "a": true,
+      "b": true
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "and",
+      "fn": "and",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  },
+  {
+    "name": "logical_or_short_circuit",
+    "expression": "a or b",
+    "scope": {
+      "a": false,
+      "b": true
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "or",
+      "fn": "or",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  },
+  {
+    "name": "logical_xor",
+    "expression": "a xor b",
+    "scope": {
+      "a": true,
+      "b": false
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "xor",
+      "fn": "xor",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": true
+  }
+]

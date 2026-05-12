@@ -1,0 +1,143 @@
+[
+  {
+    "name": "add_simple",
+    "expression": "2 + 3",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "+",
+      "fn": "add",
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 2
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 3
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 5
+  },
+  {
+    "name": "subtract_with_inputs",
+    "expression": "a - b",
+    "scope": {
+      "a": 10,
+      "b": 4
+    },
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "-",
+      "fn": "subtract",
+      "args": [
+        {
+          "mathjs": "SymbolNode",
+          "name": "a"
+        },
+        {
+          "mathjs": "SymbolNode",
+          "name": "b"
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 6
+  },
+  {
+    "name": "multiply_simple",
+    "expression": "4 * 5",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "*",
+      "fn": "multiply",
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 4
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 5
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 20
+  },
+  {
+    "name": "divide_fractional",
+    "expression": "10 / 4",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "/",
+      "fn": "divide",
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 10
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 4
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 2.5
+  },
+  {
+    "name": "pow_integer",
+    "expression": "2 ^ 8",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "^",
+      "fn": "pow",
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 2
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 8
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 256
+  },
+  {
+    "name": "mod_simple",
+    "expression": "19 mod 5",
+    "scope": {},
+    "mathjs_json": {
+      "mathjs": "OperatorNode",
+      "op": "mod",
+      "fn": "mod",
+      "args": [
+        {
+          "mathjs": "ConstantNode",
+          "value": 19
+        },
+        {
+          "mathjs": "ConstantNode",
+          "value": 5
+        }
+      ],
+      "implicit": false,
+      "isPercentage": false
+    },
+    "expected": 4
+  }
+]

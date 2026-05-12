@@ -255,6 +255,10 @@ The GitHub mutation workflow runs on source and test changes, records the full m
 
 The tests cover operator translation, helper semantics, dependency validation, error conditions, numpy-friendly behaviour, and public API ergonomics.
 
+### Cross-validation against math.js
+
+The `validation/` subproject uses upstream [math.js](https://github.com/josdejong/mathjs) as a ground-truth oracle: a Node script runs each curated expression through `math.parse(expr).toJSON()` (to get AST JSON) and `math.parse(expr).evaluate(scope)` (to get the expected value), and writes both to `validation/fixtures/*.json`. `tests/test_oracle.py` loads those fixtures and asserts that `build_evaluator` produces matching results within math.js's default tolerances. Fixtures are committed; CI stays Python-only. See [`validation/README.md`](validation/README.md) for regeneration instructions.
+
 ## Project Structure
 
 ```
