@@ -84,12 +84,36 @@ def main():
 | `compile_cache` | `bool` (optional)                | Reuse compiled functions through an opt-in canonical JSON LRU cache. |
 | `include_source` | `bool` (optional)              | Attach executable generated Python source code as `__mathjs_source__` on the returned callable. |
 
-The returned callable always expects a single mapping argument with the provided inputs. It returns the evaluated `target` value and may be reused across invocations.
+The returned callable always expects a single mapping argument with the provided inputs. It returns the evaluated `target` value when `target` is a string, or a `dict[str, Any]` in the requested target order when `target` is a sequence, and may be reused across invocations.
 
 When `target` is a sequence, the callable returns a mapping in the requested target order:
 
 ```python
-evaluator = build_evaluator(expressions=exprs, inputs=["x"], target=["low", "high"])
+exprs = {
+    "low": {
+        "type": "OperatorNode",
+        "fn": "subtract",
+        "args": [
+            {"type": "SymbolNode", "name": "x"},
+            {"type": "ConstantNode", "value": "2", "valueType": "number"},
+        ],
+    },
+    "high": {
+        "type": "OperatorNode",
+        "fn": "add",
+        "args": [
+            {"type": "SymbolNode", "name": "x"},
+            {"type": "ConstantNode", "value": "2", "valueType": "number"},
+        ],
+    },
+}
+
+evaluator = build_evaluator(
+    expressions=exprs,
+    inputs=["x"],
+    target=["low", "high"],
+    include_source=True,
+)
 assert evaluator({"x": 10}) == {"low": 8, "high": 12}
 ```
 

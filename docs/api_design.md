@@ -5,7 +5,7 @@
 ```
 from mathjs_to_func import build_evaluator
 
-func, source = build_evaluator(
+func = build_evaluator(
     expressions=...,  # dict[str, dict]
     inputs=...,       # Iterable[str]
     target=...,       # str | Sequence[str]
@@ -13,9 +13,11 @@ func, source = build_evaluator(
     compile_cache=...,  # optional canonical JSON LRU cache
     include_source=True,
 )
+source = func.__mathjs_source__
 ```
 
-- Returns a Python callable plus optional source preview string.
+- Returns a Python callable.
+- When `include_source=True`, the generated source preview is attached to the callable as `__mathjs_source__`.
 - Callable accepts a mapping of input variable names to numeric/array values and returns the computed `target` value, or a `dict[str, Any]` for multiple targets.
 - Intermediate expressions evaluate once in dependency order.
 
