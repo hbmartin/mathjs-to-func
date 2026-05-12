@@ -24,7 +24,12 @@ from .errors import (
     RuntimeEvaluationError,
     UnknownIdentifierError,
 )
-from .helpers import EvalConfig, HELPER_NAME_MAP, coerce_eval_config, create_helper_functions
+from .helpers import (
+    HELPER_NAME_MAP,
+    EvalConfig,
+    coerce_eval_config,
+    create_helper_functions,
+)
 
 RESERVED_INTERNAL_PREFIX = "__mj_"
 
@@ -130,7 +135,7 @@ def _dependency_closure(
     return needed
 
 
-def _build_function_ast(
+def _build_function_ast(  # noqa: PLR0913
     *,
     evaluation_order: tuple[str, ...],
     expressions: Mapping[str, Mapping[str, Any]],

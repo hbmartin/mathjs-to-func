@@ -8,13 +8,15 @@ from mathjs_to_func import build_evaluator
 func, source = build_evaluator(
     expressions=...,  # dict[str, dict]
     inputs=...,       # Iterable[str]
-    target=...,       # str
+    target=...,       # str | Sequence[str]
+    config=...,       # optional EvalConfig or mapping
+    compile_cache=...,  # optional canonical JSON LRU cache
     include_source=True,
 )
 ```
 
 - Returns a Python callable plus optional source preview string.
-- Callable accepts a mapping of input variable names to numeric/array values and returns the computed `target` value.
+- Callable accepts a mapping of input variable names to numeric/array values and returns the computed `target` value, or a `dict[str, Any]` for multiple targets.
 - Intermediate expressions evaluate once in dependency order.
 
 ## Responsibilities
@@ -23,6 +25,7 @@ func, source = build_evaluator(
 - Translate math.js AST JSON into safe Python `ast.AST` nodes.
 - Build dependency graph, detect missing references and cycles.
 - Generate Python function that reuses NumPy for math ops.
+- Bind per-evaluator comparison tolerances through the helper bundle.
 - Provide clear exceptions for invalid payloads.
 
 ## Supported math.js Nodes
@@ -64,7 +67,7 @@ def compiled(inputs):
     return expr_b
 ```
 
-- Imports NumPy as `np` when needed.
+- Includes a preamble importing the generated helper bindings when source output is requested.
 - Maintains deterministic ordering.
-- Optionally included in return tuple when `include_source=True`.
+- Optionally attached as `__mathjs_source__` when `include_source=True`.
 ```

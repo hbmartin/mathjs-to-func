@@ -36,7 +36,7 @@ Primary math.js references:
 | `add`, `subtract`, `multiply`, `divide`, `pow`, `mod` | Supported | Uses Python/NumPy arithmetic. Also accepted in `FunctionNode` form. |
 | `unaryPlus`, `unaryMinus` | Supported | Uses Python unary operators. |
 | `not`, `and`, `or`, `xor` | Supported | Scalar `and`/`or` are lazy; arrays vectorize. Also accepted in `FunctionNode` form. |
-| `equal`, `unequal`, `larger`, `largerEq`, `smaller`, `smallerEq` | Supported | Numeric comparisons use math.js-style default tolerances: `relTol=1e-12`, `absTol=1e-15`. Also accepted in `FunctionNode` form. |
+| `equal`, `unequal`, `larger`, `largerEq`, `smaller`, `smallerEq` | Supported | Numeric comparisons use math.js-style default tolerances: `relTol=1e-12`, `absTol=1e-15`; override per evaluator with `EvalConfig` or `{"epsilon": ...}`. Also accepted in `FunctionNode` form. |
 | `nullish` | Supported | Lazily evaluates fallback for scalar values in both operator and `FunctionNode` alias form. |
 | `dotMultiply`, `dotDivide`, `dotPow` | Not supported | NumPy broadcasting covers many array use cases, but math.js dot operator semantics are not separately modeled. |
 | `bitAnd`, `bitOr`, `bitXor`, `bitNot`, shifts | Not supported | Bitwise operators are out of scope. |
@@ -79,7 +79,7 @@ Primary math.js references:
 | Python `int`/`float`/`bool`/`None` | Supported | Primary scalar types. |
 | NumPy arrays/scalars | Supported | Used for vectorized workloads. |
 | Python `complex` | Partial | Built-in `i` works for Python arithmetic; complex-specific math.js functions are not implemented. |
-| math.js `BigNumber`, `Fraction`, `Unit`, `Matrix`, sparse matrix | Not supported | Add via helper-layer extensions if needed. |
+| math.js `BigNumber`, `Fraction`, `Unit`, `Matrix`, sparse matrix | Not supported | `parse`/`parse_payload` reject math.js replacer values such as `BigNumber`, `Fraction`, and `Unit` with explicit unsupported-value errors. Add via helper-layer extensions if needed. |
 
 ## Evaluation Model
 
@@ -87,3 +87,4 @@ Primary math.js references:
 - Unknown symbols fail at compile time unless they are declared inputs, expression ids, or supported built-in constants.
 - Generated code executes with a deliberately small globals dictionary and no ambient builtins.
 - User-provided identifiers may not use the reserved `__mj_` prefix, which is used for generated runtime internals.
+- `include_source=True` emits a Python source string with the import preamble needed to re-execute `_compiled` when `mathjs_to_func` is installed.

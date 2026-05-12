@@ -65,7 +65,7 @@ MATHJS_ABS_TOL = 1e-15
 
 def _coerce_tolerance(value: object, *, name: str) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"{name} must be a non-negative finite number")
+        raise TypeError(f"{name} must be a non-negative finite number")
     try:
         tolerance = float(cast("Any", value))
     except (TypeError, ValueError) as exc:
@@ -84,6 +84,7 @@ class EvalConfig:
     epsilon: float | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        """Normalize and validate tolerance aliases."""
         rel_tol: object = self.rel_tol
         abs_tol: object = self.abs_tol
         if self.epsilon is not None:
@@ -117,7 +118,11 @@ def coerce_eval_config(config: EvalConfig | Mapping[str, object] | None) -> Eval
         if unknown:
             names = ", ".join(sorted(str(item) for item in unknown))
             raise ValueError(f"Unknown EvalConfig option(s): {names}")
-        return EvalConfig(**dict(config))
+        return EvalConfig(
+            rel_tol=cast("float", config.get("rel_tol", MATHJS_REL_TOL)),
+            abs_tol=cast("float", config.get("abs_tol", MATHJS_ABS_TOL)),
+            epsilon=cast("float | None", config.get("epsilon")),
+        )
     raise TypeError("config must be an EvalConfig, mapping, or None")
 
 
@@ -740,7 +745,7 @@ def _mj_relational(
     return _maybe_scalar(result)
 
 
-def _configured_comparison_helpers(
+def _configured_comparison_helpers(  # noqa: C901
     config: EvalConfig,
 ) -> dict[str, Callable[..., object]]:
     def close(left: object, right: object) -> object:
@@ -803,7 +808,9 @@ def _configured_comparison_helpers(
         *terms: Callable[[], object],
     ) -> object:
         if len(conditionals) != len(terms) - 1:
-            raise ValueError("RelationalNode requires one fewer conditional than params")
+            raise ValueError(
+                "RelationalNode requires one fewer conditional than params",
+            )
 
         left = terms[0]()
         result: object = True
@@ -935,7 +942,7 @@ def _mj_access(value: object, *dimensions: object) -> object:
     return _maybe_scalar(current)
 
 
-HELPER_FUNCTIONS = {
+HELPER_FUNCTIONS: dict[str, Callable[..., object]] = {
     "__mj_abs": _mj_abs,
     "__mj_acos": _mj_acos,
     "__mj_acosh": _mj_acosh,
@@ -1000,14 +1007,11 @@ HELPER_FUNCTIONS = {
 }
 
 __all__ = [
-    "EvalConfig",
     "HELPER_FUNCTIONS",
     "HELPER_NAME_MAP",
     "MATHJS_ABS_TOL",
     "MATHJS_REL_TOL",
-    "coerce_eval_config",
-    "create_helper_functions",
-    "source_preamble",
+    "EvalConfig",
     "_mj_abs",
     "_mj_access",
     "_mj_acos",
@@ -1069,4 +1073,7 @@ __all__ = [
     "_mj_variance",
     "_mj_where",
     "_mj_xor",
+    "coerce_eval_config",
+    "create_helper_functions",
+    "source_preamble",
 ]
