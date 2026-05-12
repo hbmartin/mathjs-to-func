@@ -463,6 +463,72 @@ def test_compile_cache_key_is_deterministic_for_input_order():
     assert second({"x": 4, "y": 5}) == 9
 
 
+def test_compile_cache_key_is_deterministic_for_expression_order():
+    first_expressions = {
+        "left": op("add", symbol("x"), const(1)),
+        "res": op("multiply", symbol("left"), const(2)),
+    }
+    second_expressions = {
+        "res": op("multiply", symbol("left"), const(2)),
+        "left": op("add", symbol("x"), const(1)),
+    }
+    first = build_evaluator(
+        expressions=first_expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+    )
+    second = build_evaluator(
+        expressions=second_expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+    )
+
+    assert first.__code__ is second.__code__
+    assert second({"x": 4}) == 10
+
+
+def test_compile_cache_accepts_raw_non_finite_numeric_literals():
+    evaluator = build_evaluator(
+        expressions={
+            "res": {
+                "type": "ConstantNode",
+                "value": math.nan,
+                "valueType": "number",
+            },
+        },
+        inputs=[],
+        target="res",
+        compile_cache=True,
+    )
+
+    assert math.isnan(evaluator({}))
+
+
+def test_compile_cache_rejects_non_string_inputs_as_expression_error():
+    expressions = {"res": const(1)}
+
+    with pytest.raises(ExpressionError, match=r"^Input identifiers must be strings$"):
+        build_evaluator(
+            expressions=expressions,
+            inputs=["x", 1],
+            target="res",
+            compile_cache=True,
+        )
+
+
+def test_build_evaluator_defaults_do_not_cache_or_attach_source():
+    expressions = {"res": op("add", symbol("x"), const(1))}
+
+    first = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    second = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+
+    assert first.__code__ is not second.__code__
+    assert not hasattr(first, "__mathjs_source__")
+    assert not hasattr(second, "__mathjs_source__")
+
+
 def test_missing_target_error():
     with pytest.raises(MissingTargetError):
         build_evaluator(expressions={"a": const(1)}, inputs=[], target="missing")
@@ -617,8 +683,19 @@ def test_zero_length_inputs():
 
 def test_duplicate_inputs_raise():
     expressions = {"res": symbol("x")}
-    with pytest.raises(ExpressionError):
+    with pytest.raises(ExpressionError, match=r"^Duplicate input identifier: x$"):
         build_evaluator(expressions=expressions, inputs=["x", "x"], target="res")
+
+
+def test_compile_cache_duplicate_inputs_raise_expression_error():
+    expressions = {"res": symbol("x")}
+    with pytest.raises(ExpressionError, match=r"^Duplicate input identifier: x$"):
+        build_evaluator(
+            expressions=expressions,
+            inputs=["x", "x"],
+            target="res",
+            compile_cache=True,
+        )
 
 
 def test_invalid_input_name_raises():
@@ -826,7 +903,10 @@ def test_eval_config_mapping_epsilon_controls_relational_helpers():
 
 
 def test_eval_config_rejects_oversized_tolerance_as_value_error():
-    with pytest.raises(ValueError, match="rel_tol must be a non-negative finite number"):
+    with pytest.raises(
+        ValueError,
+        match="rel_tol must be a non-negative finite number",
+    ):
         EvalConfig(rel_tol=10**5000)
 
 
