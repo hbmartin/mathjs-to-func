@@ -49,7 +49,7 @@ jobs:
       - name: Summarize mutation results
         run: |
           set -o pipefail
-          uv run mutmut results --all true | tee mutmut-results.txt
+          uv run mutmut results --all=true | tee mutmut-results.txt
           uv run python - <<'PY'
           import os
           from collections import Counter
