@@ -59,7 +59,7 @@ def _ensure_user_identifier(name: str, *, expression: str | None) -> str:
     return safe_name
 
 
-def _normalise_inputs(inputs: Iterable[str]) -> tuple[str, ...]:
+def normalise_inputs(inputs: Iterable[str]) -> tuple[str, ...]:
     seen: set[str] = set()
     ordered: list[str] = []
     for raw in inputs:
@@ -395,7 +395,7 @@ def compile_to_callable(
     normalized_config = coerce_eval_config(config)
     targets, returns_mapping = _normalise_targets(target)
 
-    normalised_inputs = _normalise_inputs(inputs)
+    normalised_inputs = normalise_inputs(inputs)
     input_set = set(normalised_inputs)
 
     validated_exprs = _validate_expressions(expressions, input_set)

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-from .compiler import CompilationResult, compile_to_callable
+from .compiler import CompilationResult, compile_to_callable, normalise_inputs
 from .errors import (
     CircularDependencyError,
     ExpressionError,
@@ -241,7 +241,7 @@ def build_evaluator(  # noqa: PLR0913
     normalized_config = coerce_eval_config(config)
 
     if compile_cache:
-        input_list = list(inputs)
+        input_list = normalise_inputs(inputs)
         canonical = _canonical_cache_key(
             expressions=expressions,
             inputs=input_list,
