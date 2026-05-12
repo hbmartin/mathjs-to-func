@@ -1,6 +1,6 @@
 [project]
 name = "mathjs-to-func"
-version = "0.4.0"
+version = "0.5.0"
 description = "Compile serialized math.js expression trees into fast, reusable Python callables."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -64,6 +64,7 @@ dev = [
 
 [tool.mutmut]
 paths_to_mutate = ["src/mathjs_to_func/"]
+also_copy = ["bench/"]
 pytest_add_cli_args_test_selection = ["tests/"]
 
 [tool.pytest.ini_options]

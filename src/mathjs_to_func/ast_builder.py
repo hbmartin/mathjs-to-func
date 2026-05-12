@@ -32,6 +32,17 @@ MATHJS_BUILTIN_SYMBOLS = {
     "tau": math.tau,
     "undefined": None,
 }
+NON_FINITE_LITERALS = {
+    "inf": math.inf,
+    "+inf": math.inf,
+    "infinity": math.inf,
+    "+infinity": math.inf,
+    "-inf": -math.inf,
+    "-infinity": -math.inf,
+    "nan": math.nan,
+    "+nan": math.nan,
+    "-nan": math.nan,
+}
 
 UNARY_OPERATOR_FUNCTIONS = {"not", "unaryMinus", "unaryPlus"}
 BINARY_OPERATOR_FUNCTIONS = {
@@ -181,19 +192,8 @@ def _to_number(value: Any, *, expression: str | None) -> float | int:
     if isinstance(value, str):
         stripped = value.strip()
         lowered = stripped.lower()
-        non_finite_literals = {
-            "inf": math.inf,
-            "+inf": math.inf,
-            "infinity": math.inf,
-            "+infinity": math.inf,
-            "-inf": -math.inf,
-            "-infinity": -math.inf,
-            "nan": math.nan,
-            "+nan": math.nan,
-            "-nan": math.nan,
-        }
-        if lowered in non_finite_literals:
-            return non_finite_literals[lowered]
+        if lowered in NON_FINITE_LITERALS:
+            return NON_FINITE_LITERALS[lowered]
         if "." in stripped or "e" in lowered:
             try:
                 return float(stripped)

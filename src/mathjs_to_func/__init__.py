@@ -108,7 +108,7 @@ def _canonical_cache_key(
             "rel_tol": config.rel_tol,
         },
         "expressions": expressions,
-        "inputs": list(inputs),
+        "inputs": sorted(inputs),
         "target": _cache_target(target),
     }
     try:

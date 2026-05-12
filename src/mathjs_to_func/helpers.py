@@ -68,7 +68,7 @@ def _coerce_tolerance(value: object, *, name: str) -> float:
         raise TypeError(f"{name} must be a non-negative finite number")
     try:
         tolerance = float(cast("Any", value))
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{name} must be a non-negative finite number") from exc
     if not math.isfinite(tolerance) or tolerance < 0:
         raise ValueError(f"{name} must be a non-negative finite number")

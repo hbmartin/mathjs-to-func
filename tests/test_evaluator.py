@@ -444,6 +444,25 @@ def test_compile_cache_reuses_compiled_code_without_source_leakage():
     assert second({"x": 4}) == 5
 
 
+def test_compile_cache_key_is_deterministic_for_input_order():
+    expressions = {"res": op("add", symbol("x"), symbol("y"))}
+    first = build_evaluator(
+        expressions=expressions,
+        inputs=["y", "x"],
+        target="res",
+        compile_cache=True,
+    )
+    second = build_evaluator(
+        expressions=expressions,
+        inputs=["x", "y"],
+        target="res",
+        compile_cache=True,
+    )
+
+    assert first.__code__ is second.__code__
+    assert second({"x": 4, "y": 5}) == 9
+
+
 def test_missing_target_error():
     with pytest.raises(MissingTargetError):
         build_evaluator(expressions={"a": const(1)}, inputs=[], target="missing")
@@ -804,6 +823,11 @@ def test_eval_config_mapping_epsilon_controls_relational_helpers():
     )
 
     assert evaluator({"x": 0.31}) == [True, False, True]
+
+
+def test_eval_config_rejects_oversized_tolerance_as_value_error():
+    with pytest.raises(ValueError, match="rel_tol must be a non-negative finite number"):
+        EvalConfig(rel_tol=10**5000)
 
 
 def test_mathjs_relational_operators_use_default_tolerances():
