@@ -514,6 +514,27 @@ def test_compile_cache_key_is_deterministic_for_expression_order():
     assert second({"x": 4}) == 10
 
 
+def test_compile_cache_reuses_entries_across_different_maxsizes():
+    expressions = {"res": op("add", symbol("x"), const(101))}
+    first = build_evaluator(
+        expressions=expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=8,
+    )
+    second = build_evaluator(
+        expressions=expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=1,
+    )
+
+    assert first.__code__ is second.__code__
+    assert second({"x": 4}) == 105
+
+
 def test_compile_cache_accepts_raw_non_finite_numeric_literals():
     evaluator = build_evaluator(
         expressions={
@@ -2401,6 +2422,43 @@ def test_compile_cache_maxsize_evicts_old_entries():
     assert first({"x": 1}) == 2
     assert second({"x": 1}) == 3
     assert first.__code__ is not first_again.__code__
+
+
+def test_compile_cache_hit_applies_current_maxsize_to_shared_cache():
+    first_expressions = {"res": op("add", symbol("x"), const(201))}
+    second_expressions = {"res": op("add", symbol("x"), const(202))}
+    first = build_evaluator(
+        expressions=first_expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=2,
+    )
+    second = build_evaluator(
+        expressions=second_expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=2,
+    )
+    first_again = build_evaluator(
+        expressions=first_expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=1,
+    )
+    second_again = build_evaluator(
+        expressions=second_expressions,
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=2,
+    )
+
+    assert first.__code__ is first_again.__code__
+    assert second.__code__ is not second_again.__code__
+    assert second_again({"x": 4}) == 206
 
 
 @pytest.mark.parametrize("maxsize", [0, -1, 1.5, True])

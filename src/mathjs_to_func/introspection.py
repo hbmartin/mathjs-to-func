@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from .ast_builder import MATHJS_BUILTIN_SYMBOLS, SymbolDependencyCollector
 from .errors import ExpressionError
@@ -179,14 +179,17 @@ def _render(  # noqa: C901, PLR0912, PLR0915
                 return f"{left} \\cdot {right}"
             if tex and fn == "pow":
                 return f"{left}^{{{right}}}"
-            return f"{left} {_OPERATOR_TEXT.get(fn, str(fn))} {right}"
+            operator_text = (
+                _OPERATOR_TEXT.get(fn, fn) if isinstance(fn, str) else str(fn)
+            )
+            return f"{left} {operator_text} {right}"
     raise ExpressionError(f"Unsupported node type for rendering: {node_type}")
 
 
 def _require_mapping(value: object) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ExpressionError("Expected math.js child node")
-    return value
+    return cast("Mapping[str, Any]", value)
 
 
 def _payload_parts(

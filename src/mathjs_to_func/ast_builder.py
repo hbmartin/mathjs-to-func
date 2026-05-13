@@ -7,8 +7,8 @@ import math
 import operator
 import re
 from collections import Counter
+from collections.abc import Callable, Mapping
 from collections.abc import Iterable as AbcIterable
-from collections.abc import Mapping
 from collections.abc import Mapping as AbcMapping
 from typing import Any, cast
 
@@ -261,15 +261,21 @@ def _node_key(value: Any) -> tuple[Any, ...] | Any:
     return value
 
 
+def _literal_constant_ast(value: object) -> ast.Constant:
+    if isinstance(value, (str, bytes, int, float, complex)) or value is None:
+        return ast.Constant(value=value)
+    raise TypeError(f"Unsupported constant-folded literal: {type(value).__name__}")
+
+
 def _literal_ast(value: object) -> ast.expr:
     if isinstance(value, list):
         return ast.List(elts=[_literal_ast(item) for item in value], ctx=ast.Load())
     if isinstance(value, dict):
         return ast.Dict(
-            keys=[ast.Constant(value=key) for key in value],
+            keys=[_literal_constant_ast(key) for key in value],
             values=[_literal_ast(item) for item in value.values()],
         )
-    return ast.Constant(value=value)
+    return _literal_constant_ast(value)
 
 
 class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
@@ -306,7 +312,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         self._root_key = self._cse_key(node)
         self._collect_cse_candidates(node)
         expression = self.visit(node)
-        assignments = [
+        assignments: list[ast.stmt] = [
             ast.Assign(
                 targets=[ast.Name(id=name, ctx=ast.Store())],
                 value=value,
@@ -384,7 +390,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                         expression=self.expression_name,
                         node=node,
                     )
-                values: dict[str, object] = {}
+                property_values: dict[str, object] = {}
                 for key, item in properties.items():
                     if not isinstance(key, str):
                         raise InvalidNodeError(
@@ -400,8 +406,8 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                     is_constant, value = self._constant_value(child)
                     if not is_constant:
                         return False, None
-                    values[key] = value
-                return True, values
+                    property_values[key] = value
+                return True, property_values
             if node_type == "OperatorNode":
                 return self._constant_operator_value(node)
             if node_type == "FunctionNode":
@@ -466,11 +472,11 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
             if not left_constant or not right_constant:
                 return False, None
             if self._is_percentage_node(right_node) and fn in {"add", "subtract"}:
-                delta = operator.mul(left, right)
+                delta = operator.mul(cast("Any", left), cast("Any", right))
                 result = (
-                    operator.add(left, delta)
+                    operator.add(cast("Any", left), delta)
                     if fn == "add"
-                    else operator.sub(left, delta)
+                    else operator.sub(cast("Any", left), delta)
                 )
                 return True, result
             if fn not in ARITHMETIC_BINARY_OPERATOR_FUNCTIONS:
@@ -529,11 +535,11 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         if fn == "not":
             return not value
         if fn == "percentage":
-            return operator.truediv(value, 100)
+            return operator.truediv(cast("Any", value), 100)
         if fn == "unaryMinus":
-            return operator.neg(value)
+            return operator.neg(cast("Any", value))
         if fn == "unaryPlus":
-            return operator.pos(value)
+            return operator.pos(cast("Any", value))
         raise InvalidNodeError(
             f"Unsupported unary operator: {fn!r}",
             expression=self.expression_name,
@@ -546,7 +552,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         left: object,
         right: object,
     ) -> object:
-        operations = {
+        operations: dict[str, Callable[[Any, Any], object]] = {
             "add": operator.add,
             "subtract": operator.sub,
             "multiply": operator.mul,
@@ -561,14 +567,20 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
             "unequal": operator.ne,
             "xor": operator.xor,
         }
-        try:
-            return operations[cast("str", fn)](left, right)
-        except KeyError as exc:
+        if not isinstance(fn, str):
             raise InvalidNodeError(
                 f"Unsupported binary operator: {fn!r}",
                 expression=self.expression_name,
                 node=None,
-            ) from exc
+            )
+        operation = operations.get(fn)
+        if operation is None:
+            raise InvalidNodeError(
+                f"Unsupported binary operator: {fn!r}",
+                expression=self.expression_name,
+                node=None,
+            )
+        return operation(left, right)
 
     def _evaluate_function(  # noqa: C901, PLR0912
         self,
@@ -577,7 +589,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
     ) -> object:
         match normalized:
             case "abs":
-                return abs(values[0])
+                return abs(cast("Any", values[0]))
             case "ceil":
                 return math.ceil(cast("Any", values[0]))
             case "cos":
