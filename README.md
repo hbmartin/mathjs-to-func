@@ -33,7 +33,7 @@ uv add mathjs-to-func --extra parse
 ## Compiling A Function
 
 ```python
-from mathjs_to_func import build_evaluator
+from mathjs_to_func import build_evaluator, to_dot, to_string
 
 def main():
     mathjs_payload = {
@@ -68,7 +68,10 @@ def main():
     # Introspection helpers
     print(evaluator.__mathjs_required_inputs__)     # ('x', 'y')
     print(evaluator.__mathjs_evaluation_order__)    # ('sum_xy', 'mean')
+    print(evaluator.__mathjs_inputs_referenced_per_target__)  # {'mean': ('x', 'y')}
     print(evaluator.__mathjs_source__)              # Generated Python source
+    print(to_string(mathjs_payload))                 # sum_xy / 2
+    print(to_dot(mathjs_payload))                    # Dependency graph
 ```
 
 ### Parameters
@@ -80,8 +83,9 @@ def main():
 | `expressions` | `Mapping[str, Mapping[str, Any]]`   | math.js AST JSON keyed by expression id. Each id becomes a local variable in the compiled function. |
 | `inputs`      | `Iterable[str]`                     | Whitelisted identifiers that may be supplied when the function is invoked. |
 | `target`      | `str \| Sequence[str]`              | Name of the expression to return, or multiple expression names to return as a `dict[str, Any]`. |
-| `config`      | `EvalConfig \| Mapping[str, object]` (optional) | Per-evaluator runtime options. `rel_tol`, `abs_tol`, and math.js-style `epsilon` control comparison tolerances. |
-| `compile_cache` | `bool` (optional)                | Reuse compiled functions through an opt-in canonical JSON LRU cache. |
+| `config`      | `EvalConfig \| Mapping[str, object]` (optional) | Per-evaluator runtime options. `rel_tol`, `abs_tol`, and math.js-style `epsilon` control comparison tolerances; `comparison` selects `"mathjs"`, `"numpy"`, or `"strict"` equality semantics; `result_dtype` selects `"auto"`, `"numpy"`, or `"python"` scalar demotion policy. |
+| `compile_cache` | `bool` (optional)                | Reuse compiled functions through an opt-in structural LRU cache. |
+| `compile_cache_maxsize` | `int \| None` (optional) | Cache size when `compile_cache=True`; defaults to `128`, and `None` makes the cache unbounded. |
 | `include_source` | `bool` (optional)              | Attach executable generated Python source code as `__mathjs_source__` on the returned callable. |
 
 The returned callable always expects a single mapping argument with the provided inputs. It returns the evaluated `target` value when `target` is a string, or a `dict[str, Any]` in the requested target order when `target` is a sequence, and may be reused across invocations.
@@ -132,7 +136,7 @@ assert namespace["_compiled"]({"x": 10}) == evaluator({"x": 10})
 | `ConstantNode`          | numeric (`number`), boolean, or `null` literals |
 | `SymbolNode`            | inputs, expression references, and common built-in constants; identifiers must be alphanumeric/underscore, starting with a letter/underscore |
 | `OperatorNode`          | `add`, `subtract`, `multiply`, `divide`, `pow`, `mod`, unary `unaryPlus`, `unaryMinus`, `not`, `and`, `or`, `xor`, comparisons, and `nullish` |
-| `FunctionNode`          | Common math.js numeric/statistical helpers, including trig, logs, `clamp`, `hypot`, integer combinatorics, `variance`, `std`, `mode`, `ifnull`, and operator aliases such as `add(a, b)` |
+| `FunctionNode`          | Common math.js numeric/statistical helpers, including trig, logs, `format`, `clamp`, `hypot`, integer combinatorics, `variance`, `std`, `mode`, `ifnull`, and operator aliases such as `add(a, b)` |
 | `ParenthesisNode`       | forwards to the wrapped expression |
 | `ArrayNode`             | materialised to Python lists/NumPy arrays |
 | `AccessorNode`/`IndexNode` | read-only indexing with math.js 1-based indices translated to Python 0-based indices |
@@ -225,7 +229,15 @@ The default schema covers a complete evaluator payload (`expressions`, `inputs`,
 2. **Dependency graph** – A topological sorter (`graphlib.TopologicalSorter`) runs over expression references to produce a safe evaluation order while catching cycles and missing references upfront.
 3. **Code generation** – The generated function validates the provided scope, binds required inputs to local variables, evaluates expressions in order, and returns the target. Intermediate values are stored as local variables named after their expression id.
 4. **Execution sandbox** – The compiled module is executed with a tightly scoped globals dictionary: helper math functions and a few safe built-ins only. There is no ambient `__builtins__` exposure.
-5. **Helper functions** – math.js functions map onto small Python helpers for arithmetic, comparison, logical, nullish, and statistics behavior. Equality and ordering use math.js-style default tolerances for numeric round-off, configurable per evaluator with `EvalConfig` or `{"epsilon": ...}`.
+5. **Helper functions** – math.js functions map onto small Python helpers for arithmetic, comparison, logical, nullish, formatting, and statistics behavior. Equality and ordering default to math.js-style tolerances for numeric round-off, configurable per evaluator with `EvalConfig`, `{"epsilon": ...}`, or `{"comparison": "numpy"}` when NumPy `isclose` semantics are desired.
+
+### Introspection
+
+Compiled evaluators expose `__mathjs_inputs_referenced_per_target__` alongside the existing source, target, input, and evaluation-order metadata. The public helpers `to_string(payload)`, `to_tex(payload)`, `to_dot(payload)`, `to_mermaid(payload)`, and `inputs_referenced_per_target(payload)` can be used before compilation to build UI labels, LaTeX tooltips, and dependency graph views.
+
+### Cache Notes
+
+`compile_cache=True` now uses a structural key rather than serializing through JSON. This avoids JSON round-trips for deep trees and lets hashable non-JSON constants participate in cache keys. The cache remains opt-in and process-local; tune it with `compile_cache_maxsize`.
 
 ## Testing
 

@@ -5,9 +5,11 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import reduce
-from typing import TYPE_CHECKING, Any, cast
+from numbers import Number
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 
@@ -57,10 +59,19 @@ HELPER_NAME_MAP = {
     "variance": "__mj_variance",
     "ifnull": "__mj_ifnull",
     "nullish": "__mj_ifnull",
+    "format": "__mj_format",
+    "logb": "__mj_log",
 }
 
 MATHJS_REL_TOL = 1e-12
 MATHJS_ABS_TOL = 1e-15
+ComparisonMode = Literal["mathjs", "numpy", "strict"]
+ResultDTypePolicy = Literal["auto", "numpy", "python"]
+
+_RESULT_DTYPE_POLICY: ContextVar[ResultDTypePolicy] = ContextVar(
+    "mathjs_to_func_result_dtype",
+    default="auto",
+)
 
 
 def _coerce_tolerance(value: object, *, name: str) -> float:
@@ -75,6 +86,13 @@ def _coerce_tolerance(value: object, *, name: str) -> float:
     return tolerance
 
 
+def _coerce_choice[T](value: object, *, name: str, choices: set[T]) -> T:
+    if value not in choices:
+        allowed = ", ".join(sorted(str(choice) for choice in choices))
+        raise ValueError(f"{name} must be one of: {allowed}")
+    return cast("T", value)
+
+
 @dataclass(frozen=True)
 class EvalConfig:
     """Runtime options used by compiled evaluators."""
@@ -82,6 +100,8 @@ class EvalConfig:
     rel_tol: float = MATHJS_REL_TOL
     abs_tol: float = MATHJS_ABS_TOL
     epsilon: float | None = field(default=None, repr=False, compare=False)
+    comparison: ComparisonMode = "mathjs"
+    result_dtype: ResultDTypePolicy = "auto"
 
     def __post_init__(self) -> None:
         """Normalize and validate tolerance aliases."""
@@ -104,6 +124,24 @@ class EvalConfig:
             _coerce_tolerance(abs_tol, name="abs_tol"),
         )
         object.__setattr__(self, "epsilon", None)
+        object.__setattr__(
+            self,
+            "comparison",
+            _coerce_choice(
+                self.comparison,
+                name="comparison",
+                choices={"mathjs", "numpy", "strict"},
+            ),
+        )
+        object.__setattr__(
+            self,
+            "result_dtype",
+            _coerce_choice(
+                self.result_dtype,
+                name="result_dtype",
+                choices={"auto", "numpy", "python"},
+            ),
+        )
 
 
 def coerce_eval_config(config: EvalConfig | Mapping[str, object] | None) -> EvalConfig:
@@ -113,7 +151,7 @@ def coerce_eval_config(config: EvalConfig | Mapping[str, object] | None) -> Eval
     if isinstance(config, EvalConfig):
         return config
     if isinstance(config, Mapping):
-        allowed = {"rel_tol", "abs_tol", "epsilon"}
+        allowed = {"rel_tol", "abs_tol", "epsilon", "comparison", "result_dtype"}
         unknown = set(config) - allowed
         if unknown:
             names = ", ".join(sorted(str(item) for item in unknown))
@@ -122,6 +160,11 @@ def coerce_eval_config(config: EvalConfig | Mapping[str, object] | None) -> Eval
             rel_tol=cast("float", config.get("rel_tol", MATHJS_REL_TOL)),
             abs_tol=cast("float", config.get("abs_tol", MATHJS_ABS_TOL)),
             epsilon=cast("float | None", config.get("epsilon")),
+            comparison=cast("ComparisonMode", config.get("comparison", "mathjs")),
+            result_dtype=cast(
+                "ResultDTypePolicy",
+                config.get("result_dtype", "auto"),
+            ),
         )
     raise TypeError("config must be an EvalConfig, mapping, or None")
 
@@ -136,9 +179,13 @@ def _expand_args(args: Sequence[object]) -> list[object]:
 
 
 def _collect(args: Sequence[object]) -> tuple[list[object], bool]:
+    expanded = _expand_args(args)
+    if not any(_is_array_like(item) for item in expanded):
+        return expanded, False
+
     values: list[object] = []
     has_array = False
-    for item in _expand_args(args):
+    for item in expanded:
         if isinstance(item, np.ndarray):
             values.append(item)
             has_array = True
@@ -151,6 +198,8 @@ def _collect(args: Sequence[object]) -> tuple[list[object], bool]:
 
 
 def _maybe_scalar(value: object) -> object:
+    if _RESULT_DTYPE_POLICY.get() == "numpy":
+        return value
     if isinstance(value, np.ndarray) and value.ndim == 0:
         return cast("Any", value).item()
     if isinstance(value, np.generic):
@@ -158,8 +207,42 @@ def _maybe_scalar(value: object) -> object:
     return value
 
 
+def _mj_result(value: object) -> object:
+    return _maybe_scalar(value)
+
+
 def _is_array_like(value: object) -> bool:
     return isinstance(value, (list, tuple, np.ndarray))
+
+
+def _as_python_scalar(value: object) -> object:
+    if isinstance(value, np.ndarray) and value.ndim == 0:
+        return cast("Any", value).item()
+    if isinstance(value, np.generic):
+        return cast("Any", value).item()
+    return value
+
+
+def _is_numeric_scalar(value: object) -> bool:
+    scalar = _as_python_scalar(value)
+    return isinstance(scalar, Number) and not isinstance(scalar, (bool, np.bool_))
+
+
+def _is_nullish(value: object) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(np.isnan(cast("Any", value)))
+    except (TypeError, ValueError):
+        return False
+
+
+def _nullish_mask(value: object) -> np.ndarray:
+    array = np.asarray(value)
+    try:
+        return cast("np.ndarray", np.isnan(array))
+    except TypeError:
+        return np.vectorize(_is_nullish, otypes=[bool])(array)
 
 
 def _flatten_nested(value: object) -> Iterator[object]:
@@ -281,38 +364,21 @@ def _mj_sum(*args: object) -> object:
 
 
 def _mj_ifnull(value: object, fallback: object) -> object:
-    if value is None:
-        return fallback
-    if isinstance(value, float) and np.isnan(value):
-        return fallback
-    if isinstance(value, np.number):
-        return fallback if np.isnan(value) else value
     if isinstance(value, np.ndarray):
-        mask = np.isnan(value)
+        mask = _nullish_mask(value)
         if not mask.any():
             return value
         return np.where(mask, np.asarray(fallback), value)
-    if isinstance(value, int):
-        return value
-    return value
+    return fallback if _is_nullish(value) else value
 
 
 def _mj_lazy_ifnull(value: object, fallback: Callable[[], object]) -> object:
     if isinstance(value, np.ndarray):
-        try:
-            mask = np.isnan(value)
-        except TypeError:
-            return value
+        mask = _nullish_mask(value)
         if mask.any():
             return np.where(mask, np.asarray(fallback()), value)
         return value
-    if value is None:
-        return fallback()
-    if isinstance(value, float) and np.isnan(value):
-        return fallback()
-    if isinstance(value, np.number):
-        return fallback() if np.isnan(value) else value
-    return value
+    return fallback() if _is_nullish(value) else value
 
 
 def _mj_abs(value: object) -> object:
@@ -341,6 +407,92 @@ def _mj_log1p(value: object, base: object | None = None) -> object:
     if base is None:
         return _unary_numpy(np.log1p, value)
     return _maybe_scalar(np.log1p(cast("Any", value)) / np.log(cast("Any", base)))
+
+
+def _trim_formatted_number(value: str) -> str:
+    if "." in value:
+        value = value.rstrip("0").rstrip(".")
+    return value
+
+
+def _format_exponent(value: str) -> str:
+    mantissa, exponent = value.split("e")
+    sign = exponent[0]
+    digits = exponent[1:].lstrip("0") or "0"
+    return f"{_trim_formatted_number(mantissa)}e{sign}{digits}"
+
+
+def _format_significant(value: float, precision: int) -> str:
+    if value == 0:
+        return "0"
+    exponent = math.floor(math.log10(abs(value)))
+    if -3 <= exponent < precision:
+        decimals = max(precision - exponent - 1, 0)
+        return _trim_formatted_number(f"{value:.{decimals}f}")
+    return _format_exponent(f"{value:.{precision - 1}e}")
+
+
+def _format_number(  # noqa: C901, PLR0912
+    value: float,
+    options: object | None,
+) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        if math.isnan(value):
+            return "NaN"
+        if math.isinf(value):
+            return "Infinity" if value > 0 else "-Infinity"
+
+    if options is None:
+        return str(value)
+    if isinstance(options, Mapping):
+        notation = str(options.get("notation", "auto"))
+        raw_precision = options.get("precision")
+    else:
+        notation = "auto"
+        raw_precision = options
+
+    precision = (
+        None if raw_precision is None else _as_integer(raw_precision, name="format")
+    )
+    numeric = float(value)
+    if precision is None:
+        return str(value)
+    if precision < 0:
+        raise ValueError("format precision must be a non-negative integer")
+    if notation == "fixed":
+        return f"{numeric:.{precision}f}"
+    if precision == 0:
+        precision = 1
+    if notation == "exponential":
+        return _format_exponent(f"{numeric:.{precision - 1}e}")
+    if notation == "engineering":
+        if numeric == 0:
+            exponent = 0
+            mantissa = 0.0
+        else:
+            exponent = math.floor(math.log10(abs(numeric)) / 3) * 3
+            mantissa = numeric / (10**exponent)
+        return f"{_format_significant(mantissa, precision)}e{exponent:+d}"
+    return _format_significant(numeric, precision)
+
+
+def _mj_format(value: object, options: object | None = None) -> str:
+    if isinstance(value, np.ndarray):
+        return _mj_format(value.tolist(), options)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_mj_format(item, options) for item in value) + "]"
+    scalar = _as_python_scalar(value)
+    if scalar is None:
+        return "null"
+    if isinstance(scalar, bool):
+        return "true" if scalar else "false"
+    if isinstance(scalar, str):
+        return scalar
+    if isinstance(scalar, Number) and not isinstance(scalar, complex):
+        return _format_number(cast("float", scalar), options)
+    return str(scalar)
 
 
 def _mj_exp(value: object) -> object:
@@ -569,8 +721,40 @@ def _mj_close_with_tolerances(
     *,
     rel_tol: float,
     abs_tol: float,
+    comparison: ComparisonMode = "mathjs",
 ) -> object:
+    if comparison == "strict":
+        return _binary_numpy(np.equal, left, right)
+
+    if not _is_array_like(left) and not _is_array_like(right):
+        left_scalar = _as_python_scalar(left)
+        right_scalar = _as_python_scalar(right)
+        if _is_numeric_scalar(left_scalar) and _is_numeric_scalar(right_scalar):
+            try:
+                difference = abs(cast("Any", left_scalar) - cast("Any", right_scalar))
+                if comparison == "numpy":
+                    threshold = abs_tol + rel_tol * abs(cast("Any", right_scalar))
+                else:
+                    threshold = max(
+                        abs_tol,
+                        rel_tol
+                        * max(
+                            abs(cast("Any", left_scalar)),
+                            abs(cast("Any", right_scalar)),
+                        ),
+                    )
+                return bool(difference <= threshold)
+            except (TypeError, ValueError, OverflowError):
+                pass
+        return bool(left_scalar == right_scalar)
+
     try:
+        if comparison == "mathjs":
+            difference = np.abs(cast("Any", left) - cast("Any", right))
+            scale = np.maximum(np.abs(cast("Any", left)), np.abs(cast("Any", right)))
+            return _maybe_scalar(
+                np.less_equal(difference, np.maximum(abs_tol, rel_tol * scale)),
+            )
         return _maybe_scalar(
             np.isclose(
                 cast("Any", left),
@@ -589,6 +773,7 @@ def _mj_close(left: object, right: object) -> object:
         right,
         rel_tol=MATHJS_REL_TOL,
         abs_tol=MATHJS_ABS_TOL,
+        comparison="mathjs",
     )
 
 
@@ -648,6 +833,9 @@ def _mj_lazy_and(left: object, right: Callable[[], object]) -> object:
     if _is_array_like(left):
         return _mj_and(left, right())
     if not left:
+        # math.js array broadcasting means a scalar false left still needs an
+        # array-shaped right operand when one exists. Arithmetic errors from
+        # probing a scalar right branch preserve JavaScript-style short-circuiting.
         try:
             right_value = right()
         except ArithmeticError:
@@ -662,6 +850,8 @@ def _mj_lazy_or(left: object, right: Callable[[], object]) -> object:
     if _is_array_like(left):
         return _mj_or(left, right())
     if left:
+        # See _mj_lazy_and: probing keeps scalar/array mixed logical operators
+        # vectorized without surfacing errors from a scalar dead branch.
         try:
             right_value = right()
         except ArithmeticError:
@@ -754,6 +944,7 @@ def _configured_comparison_helpers(  # noqa: C901
             right,
             rel_tol=config.rel_tol,
             abs_tol=config.abs_tol,
+            comparison=config.comparison,
         )
 
     def larger(left: object, right: object) -> object:
@@ -855,7 +1046,18 @@ def create_helper_functions(
     normalized = coerce_eval_config(config)
     helpers = dict(HELPER_FUNCTIONS)
     helpers.update(_configured_comparison_helpers(normalized))
-    return helpers
+
+    def bind_policy(func: Callable[..., object]) -> Callable[..., object]:
+        def wrapped(*args: object, **kwargs: object) -> object:
+            token = _RESULT_DTYPE_POLICY.set(normalized.result_dtype)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                _RESULT_DTYPE_POLICY.reset(token)
+
+        return wrapped
+
+    return {name: bind_policy(helper) for name, helper in helpers.items()}
 
 
 def source_preamble(config: EvalConfig | Mapping[str, object] | None = None) -> str:
@@ -879,6 +1081,8 @@ def source_preamble(config: EvalConfig | Mapping[str, object] | None = None) -> 
         "        __mj_EvalConfig(\n"
         f"            rel_tol={normalized.rel_tol!r},\n"
         f"            abs_tol={normalized.abs_tol!r},\n"
+        f"            comparison={normalized.comparison!r},\n"
+        f"            result_dtype={normalized.result_dtype!r},\n"
         "        )\n"
         "    )\n"
         ")\n"
@@ -963,6 +1167,7 @@ HELPER_FUNCTIONS: dict[str, Callable[..., object]] = {
     "__mj_exp": _mj_exp,
     "__mj_factorial": _mj_factorial,
     "__mj_floor": _mj_floor,
+    "__mj_format": _mj_format,
     "__mj_gcd": _mj_gcd,
     "__mj_hypot": _mj_hypot,
     "__mj_index": _mj_index,
@@ -986,6 +1191,7 @@ HELPER_FUNCTIONS: dict[str, Callable[..., object]] = {
     "__mj_or": _mj_or,
     "__mj_permutations": _mj_permutations,
     "__mj_range": _mj_range,
+    "__mj_result": _mj_result,
     "__mj_round": _mj_round,
     "__mj_sign": _mj_sign,
     "__mj_sin": _mj_sin,
@@ -1032,6 +1238,7 @@ __all__ = [
     "_mj_exp",
     "_mj_factorial",
     "_mj_floor",
+    "_mj_format",
     "_mj_gcd",
     "_mj_hypot",
     "_mj_ifnull",
@@ -1058,6 +1265,7 @@ __all__ = [
     "_mj_permutations",
     "_mj_range",
     "_mj_relational",
+    "_mj_result",
     "_mj_round",
     "_mj_sign",
     "_mj_sin",
