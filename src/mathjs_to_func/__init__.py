@@ -192,8 +192,8 @@ def _cached_compile(  # noqa: PLR0913
     maxsize: int | None,
 ) -> CompilationResult:
     with _CACHE_LOCK:
-        if canonical_payload in _COMPILE_CACHE:
-            result = _COMPILE_CACHE[canonical_payload]
+        result = _COMPILE_CACHE.get(canonical_payload)
+        if result is not None:
             _COMPILE_CACHE.move_to_end(canonical_payload)
             _prune_compile_cache_locked(maxsize)
             return result
@@ -206,8 +206,8 @@ def _cached_compile(  # noqa: PLR0913
     )
 
     with _CACHE_LOCK:
-        if canonical_payload in _COMPILE_CACHE:
-            cached = _COMPILE_CACHE[canonical_payload]
+        cached = _COMPILE_CACHE.get(canonical_payload)
+        if cached is not None:
             _COMPILE_CACHE.move_to_end(canonical_payload)
             _prune_compile_cache_locked(maxsize)
             return cached
