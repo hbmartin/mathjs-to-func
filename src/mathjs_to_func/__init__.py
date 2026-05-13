@@ -171,8 +171,15 @@ def _canonical_cache_key(
     )
 
 
-_COMPILE_CACHES: dict[int | None, OrderedDict[Hashable, CompilationResult]] = {}
+_COMPILE_CACHE: OrderedDict[Hashable, CompilationResult] = OrderedDict()
 _CACHE_LOCK = threading.Lock()
+
+
+def _prune_compile_cache_locked(maxsize: int | None) -> None:
+    if maxsize is None:
+        return
+    while len(_COMPILE_CACHE) > maxsize:
+        _COMPILE_CACHE.popitem(last=False)
 
 
 def _cached_compile(  # noqa: PLR0913
@@ -185,10 +192,10 @@ def _cached_compile(  # noqa: PLR0913
     maxsize: int | None,
 ) -> CompilationResult:
     with _CACHE_LOCK:
-        cache = _COMPILE_CACHES.setdefault(maxsize, OrderedDict())
-        if canonical_payload in cache:
-            result = cache.pop(canonical_payload)
-            cache[canonical_payload] = result
+        if canonical_payload in _COMPILE_CACHE:
+            result = _COMPILE_CACHE.pop(canonical_payload)
+            _COMPILE_CACHE[canonical_payload] = result
+            _prune_compile_cache_locked(maxsize)
             return result
 
     result = compile_to_callable(
@@ -199,15 +206,13 @@ def _cached_compile(  # noqa: PLR0913
     )
 
     with _CACHE_LOCK:
-        cache = _COMPILE_CACHES.setdefault(maxsize, OrderedDict())
-        if canonical_payload in cache:
-            cached = cache.pop(canonical_payload)
-            cache[canonical_payload] = cached
+        if canonical_payload in _COMPILE_CACHE:
+            cached = _COMPILE_CACHE.pop(canonical_payload)
+            _COMPILE_CACHE[canonical_payload] = cached
+            _prune_compile_cache_locked(maxsize)
             return cached
-        cache[canonical_payload] = result
-        if maxsize is not None and maxsize > 0:
-            while len(cache) > maxsize:
-                cache.popitem(last=False)
+        _COMPILE_CACHE[canonical_payload] = result
+        _prune_compile_cache_locked(maxsize)
     return result
 
 

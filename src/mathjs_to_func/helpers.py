@@ -447,8 +447,9 @@ def _format_number(  # noqa: C901, PLR0912
                 return "Infinity" if value > 0 else "-Infinity"
         return str(value)
     if isinstance(options, Mapping):
-        notation = str(options.get("notation", "auto"))
-        raw_precision = options.get("precision")
+        typed_options = cast("Mapping[str, object]", options)
+        notation = str(typed_options.get("notation", "auto"))
+        raw_precision = typed_options.get("precision")
     else:
         notation = "auto"
         raw_precision = options
@@ -492,7 +493,7 @@ def _format_number(  # noqa: C901, PLR0912
 
 def _mj_format(value: object, options: object | None = None) -> str:
     if isinstance(value, np.ndarray):
-        return _mj_format(value.tolist(), options)
+        return _mj_format(cast("Any", value).tolist(), options)
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(_mj_format(item, options) for item in value) + "]"
     scalar = _as_python_scalar(value)
