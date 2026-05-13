@@ -45,6 +45,7 @@ class CompilationResult:
     returns_mapping: bool
     module_ast: ast.Module
     config: EvalConfig
+    inputs_referenced_per_target: dict[str, tuple[str, ...]]
 
 
 def _ensure_user_identifier(name: str, *, expression: str | None) -> str:
@@ -144,6 +145,7 @@ def _build_function_ast(  # noqa: PLR0913
     allowed_inputs: tuple[str, ...],
     targets: tuple[str, ...],
     returns_mapping: bool,
+    finalize_result: bool,
 ) -> ast.Module:
     scope_name = "__mj_scope"
     scope_keys_name = "__mj_scope_keys"
@@ -162,11 +164,15 @@ def _build_function_ast(  # noqa: PLR0913
         return builder_cache[expr_name]
 
     def _runtime_wrapped_assign(expr_name: str) -> ast.Try:
+        cse_assignments, expression = _builder(expr_name).build_with_bindings(
+            expressions[expr_name],
+        )
         return ast.Try(
             body=[
+                *cse_assignments,
                 ast.Assign(
                     targets=[ast.Name(id=expr_name, ctx=ast.Store())],
-                    value=_builder(expr_name).build(expressions[expr_name]),
+                    value=expression,
                 ),
             ],
             handlers=[
@@ -353,13 +359,24 @@ def _build_function_ast(  # noqa: PLR0913
 
     body.extend(_runtime_wrapped_assign(expr_name) for expr_name in evaluation_order)
 
+    def _return_expr(value: ast.expr) -> ast.expr:
+        if not finalize_result:
+            return value
+        return ast.Call(
+            func=ast.Name(id="__mj_result", ctx=ast.Load()),
+            args=[value],
+            keywords=[],
+        )
+
     if returns_mapping:
         return_value: ast.expr = ast.Dict(
             keys=[ast.Constant(value=target) for target in targets],
-            values=[ast.Name(id=target, ctx=ast.Load()) for target in targets],
+            values=[
+                _return_expr(ast.Name(id=target, ctx=ast.Load())) for target in targets
+            ],
         )
     else:
-        return_value = ast.Name(id=targets[0], ctx=ast.Load())
+        return_value = _return_expr(ast.Name(id=targets[0], ctx=ast.Load()))
 
     body.append(ast.Return(value=return_value))
 
@@ -425,6 +442,23 @@ def compile_to_callable(
     required_inputs = sorted(
         {dep for expr in closure for dep in dependency_map[expr] if dep in input_set},
     )
+    inputs_referenced_per_target = {
+        target_name: tuple(
+            sorted(
+                {
+                    dep
+                    for expr in _dependency_closure(
+                        [target_name],
+                        dependency_map,
+                        set(validated_exprs),
+                    )
+                    for dep in dependency_map[expr]
+                    if dep in input_set
+                },
+            ),
+        )
+        for target_name in targets
+    }
 
     sorter = TopologicalSorter()
     for expr in sorted(closure):
@@ -447,6 +481,7 @@ def compile_to_callable(
         allowed_inputs=normalised_inputs,
         targets=targets,
         returns_mapping=returns_mapping,
+        finalize_result=normalized_config.result_dtype == "python",
     )
 
     compiled = compile(module_ast, filename="<mathjs>", mode="exec")
@@ -474,6 +509,7 @@ def compile_to_callable(
         returns_mapping=returns_mapping,
         module_ast=module_ast,
         config=normalized_config,
+        inputs_referenced_per_target=inputs_referenced_per_target,
     )
 
 

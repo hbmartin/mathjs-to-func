@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import ast
-import json
-from functools import lru_cache
+import math
+from collections import OrderedDict
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from types import FunctionType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Literal, Protocol, cast, overload
 
 from .compiler import CompilationResult, compile_to_callable, normalise_inputs
 from .errors import (
@@ -22,6 +20,13 @@ from .errors import (
     UnknownIdentifierError,
 )
 from .helpers import EvalConfig, coerce_eval_config, source_preamble
+from .introspection import (
+    inputs_referenced_per_target,
+    to_dot,
+    to_mermaid,
+    to_string,
+    to_tex,
+)
 
 __all__ = [
     "CircularDependencyError",
@@ -35,6 +40,11 @@ __all__ = [
     "RuntimeEvaluationError",
     "UnknownIdentifierError",
     "build_evaluator",
+    "inputs_referenced_per_target",
+    "to_dot",
+    "to_mermaid",
+    "to_string",
+    "to_tex",
 ]
 
 
@@ -46,6 +56,7 @@ class CompiledEvaluator(Protocol):
     __mathjs_config__: EvalConfig
     __mathjs_required_inputs__: tuple[str, ...]
     __mathjs_evaluation_order__: tuple[str, ...]
+    __mathjs_inputs_referenced_per_target__: dict[str, tuple[str, ...]]
     __mathjs_targets__: tuple[str, ...]
 
     def __call__(self, scope: Mapping[str, Any]) -> Any:  # noqa: ANN401
@@ -95,46 +106,99 @@ def _cache_target(target: str | Sequence[str]) -> str | list[str]:
         return cast("Any", target)
 
 
+def _structural_cache_value(value: object) -> Hashable:
+    if isinstance(value, float):
+        if math.isnan(value):
+            return ("float", "nan")
+        if math.isinf(value):
+            return ("float", "inf" if value > 0 else "-inf")
+    if isinstance(value, dict):
+        items = [
+            (
+                _structural_cache_value(key),
+                _structural_cache_value(item),
+            )
+            for key, item in value.items()
+        ]
+        return (
+            "dict",
+            tuple(sorted(items, key=repr)),
+        )
+    if isinstance(value, Mapping):
+        items = [
+            (
+                _structural_cache_value(key),
+                _structural_cache_value(item),
+            )
+            for key, item in value.items()
+        ]
+        return (
+            "mapping",
+            tuple(sorted(items, key=repr)),
+        )
+    if isinstance(value, (list, tuple)):
+        return ("sequence", tuple(_structural_cache_value(item) for item in value))
+    if isinstance(value, set):
+        return (
+            "set",
+            tuple(sorted((_structural_cache_value(item) for item in value), key=repr)),
+        )
+    if isinstance(value, Hashable):
+        return value
+    return ("repr", type(value).__qualname__, repr(value))
+
+
 def _canonical_cache_key(
     *,
     expressions: Mapping[str, Any],
     inputs: Iterable[str],
     target: str | Sequence[str],
     config: EvalConfig,
-) -> str:
-    payload = {
-        "config": {
-            "abs_tol": config.abs_tol,
-            "rel_tol": config.rel_tol,
+) -> Hashable:
+    return _structural_cache_value(
+        {
+            "config": {
+                "abs_tol": config.abs_tol,
+                "comparison": config.comparison,
+                "rel_tol": config.rel_tol,
+                "result_dtype": config.result_dtype,
+            },
+            "expressions": expressions,
+            "inputs": sorted(inputs),
+            "target": _cache_target(target),
         },
-        "expressions": expressions,
-        "inputs": sorted(inputs),
-        "target": _cache_target(target),
-    }
-    try:
-        return json.dumps(
-            payload,
-            allow_nan=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-    except (TypeError, ValueError) as exc:
-        raise ExpressionError(
-            "compile_cache requires JSON-serializable expressions, inputs, "
-            "target, and config",
-        ) from exc
+    )
 
 
-@lru_cache(maxsize=128)
-def _cached_compile(canonical_payload: str) -> CompilationResult:
-    payload = json.loads(canonical_payload)
-    config = EvalConfig(**payload["config"])
-    return compile_to_callable(
-        expressions=payload["expressions"],
-        inputs=payload["inputs"],
-        target=payload["target"],
+_COMPILE_CACHES: dict[int | None, OrderedDict[Hashable, CompilationResult]] = {}
+
+
+def _cached_compile(  # noqa: PLR0913
+    canonical_payload: Hashable,
+    *,
+    expressions: Mapping[str, Any],
+    inputs: Iterable[str],
+    target: str | Sequence[str],
+    config: EvalConfig,
+    maxsize: int | None,
+) -> CompilationResult:
+    cache = _COMPILE_CACHES.setdefault(maxsize, OrderedDict())
+    if canonical_payload in cache:
+        result = cache.pop(canonical_payload)
+        cache[canonical_payload] = result
+        return result
+
+    result = compile_to_callable(
+        expressions=expressions,
+        inputs=inputs,
+        target=target,
         config=config,
     )
+    cache[canonical_payload] = result
+    if maxsize is not None and maxsize > 0:
+        while len(cache) > maxsize:
+            cache.popitem(last=False)
+    return result
 
 
 def _clone_compilation_result(result: CompilationResult) -> CompilationResult:
@@ -158,6 +222,7 @@ def _clone_compilation_result(result: CompilationResult) -> CompilationResult:
         returns_mapping=result.returns_mapping,
         module_ast=result.module_ast,
         config=result.config,
+        inputs_referenced_per_target=dict(result.inputs_referenced_per_target),
     )
 
 
@@ -170,6 +235,7 @@ def _attach_metadata(
     func.__mathjs_config__ = result.config
     func.__mathjs_required_inputs__ = result.required_inputs
     func.__mathjs_evaluation_order__ = result.evaluation_order
+    func.__mathjs_inputs_referenced_per_target__ = result.inputs_referenced_per_target
     func.__mathjs_targets__ = result.targets
 
     if include_source:
@@ -189,6 +255,7 @@ def build_evaluator(
     payload: Mapping[str, Any] | None = None,
     config: EvalConfig | Mapping[str, object] | None = None,
     compile_cache: bool = False,
+    compile_cache_maxsize: int | None = 128,
     include_source: Literal[True],
 ) -> CompiledEvaluatorWithSource: ...
 
@@ -202,6 +269,7 @@ def build_evaluator(
     payload: Mapping[str, Any] | None = None,
     config: EvalConfig | Mapping[str, object] | None = None,
     compile_cache: bool = False,
+    compile_cache_maxsize: int | None = 128,
     include_source: Literal[False] = False,
 ) -> CompiledEvaluator: ...
 
@@ -215,6 +283,7 @@ def build_evaluator(
     payload: Mapping[str, Any] | None = None,
     config: EvalConfig | Mapping[str, object] | None = None,
     compile_cache: bool = False,
+    compile_cache_maxsize: int | None = 128,
     include_source: bool,
 ) -> CompiledEvaluator | CompiledEvaluatorWithSource: ...
 
@@ -227,6 +296,7 @@ def build_evaluator(  # noqa: PLR0913
     payload: Mapping[str, Any] | None = None,
     config: EvalConfig | Mapping[str, object] | None = None,
     compile_cache: bool = False,
+    compile_cache_maxsize: int | None = 128,
     include_source: bool = False,
 ) -> CompiledEvaluator | CompiledEvaluatorWithSource:
     """Compile math.js expressions into a reusable callable.
@@ -241,6 +311,8 @@ def build_evaluator(  # noqa: PLR0913
     normalized_config = coerce_eval_config(config)
 
     if compile_cache:
+        if compile_cache_maxsize is not None and compile_cache_maxsize < 1:
+            raise ValueError("compile_cache_maxsize must be a positive integer or None")
         input_list = normalise_inputs(inputs)
         canonical = _canonical_cache_key(
             expressions=expressions,
@@ -248,7 +320,16 @@ def build_evaluator(  # noqa: PLR0913
             target=target,
             config=normalized_config,
         )
-        result = _clone_compilation_result(_cached_compile(canonical))
+        result = _clone_compilation_result(
+            _cached_compile(
+                canonical,
+                expressions=expressions,
+                inputs=input_list,
+                target=target,
+                config=normalized_config,
+                maxsize=compile_cache_maxsize,
+            ),
+        )
     else:
         result = compile_to_callable(
             expressions=expressions,

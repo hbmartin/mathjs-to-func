@@ -23,6 +23,16 @@ def test_parse_constant_node():
     }
 
 
+def test_parse_string_constant_node():
+    payload = '{"type": "ConstantNode", "value": "fixed", "valueType": "string"}'
+    result = parse(payload)
+    assert result == {
+        "type": "ConstantNode",
+        "value": "fixed",
+        "valueType": "string",
+    }
+
+
 def test_parse_symbol_node_from_mathjs_alias():
     payload = json.dumps({"mathjs": "SymbolNode", "name": "x"})
     result = parse(payload)

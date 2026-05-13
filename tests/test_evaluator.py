@@ -15,6 +15,11 @@ from mathjs_to_func import (
     RuntimeEvaluationError,
     UnknownIdentifierError,
     build_evaluator,
+    inputs_referenced_per_target,
+    to_dot,
+    to_mermaid,
+    to_string,
+    to_tex,
 )
 
 
@@ -25,6 +30,10 @@ def const(value):
         "value": str(value).lower() if isinstance(value, bool) else str(value),
         "valueType": value_type,
     }
+
+
+def string_const(value):
+    return {"type": "ConstantNode", "value": value, "valueType": "string"}
 
 
 def symbol(name, *, use_mathjs=False):
@@ -2129,3 +2138,259 @@ def test_builtin_escape_function_calls_are_rejected(fn_name):
             inputs=[],
             target="res",
         )
+
+
+def test_percentage_unary_operator_forms():
+    expressions = {
+        "raw_percent": {
+            "type": "OperatorNode",
+            "fn": "percentage",
+            "op": "%",
+            "args": [symbol("x")],
+        },
+        "mathjs_percent": {
+            "mathjs": "OperatorNode",
+            "fn": "divide",
+            "op": "/",
+            "args": [symbol("x"), const(100)],
+            "isPercentage": True,
+        },
+        "res": array(symbol("raw_percent"), symbol("mathjs_percent")),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+
+    assert evaluator({"x": 12}) == [0.12, 0.12]
+
+
+def test_percentage_addition_context_form():
+    expressions = {
+        "res": {
+            "type": "OperatorNode",
+            "fn": "add",
+            "op": "+",
+            "args": [
+                symbol("base"),
+                {
+                    "type": "OperatorNode",
+                    "fn": "percentage",
+                    "op": "%",
+                    "args": [symbol("rate")],
+                },
+            ],
+        },
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["base", "rate"],
+        target="res",
+    )
+
+    assert evaluator({"base": 100, "rate": 10}) == 110
+
+
+def test_format_function_with_options_object():
+    expressions = {
+        "res": func(
+            "format",
+            const(2.345),
+            object_node(notation=string_const("fixed"), precision=const(2)),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=[], target="res")
+
+    assert evaluator({}) == "2.35"
+
+
+def test_format_function_supports_native_mathjs_string_constants():
+    expressions = {
+        "res": func(
+            "format",
+            symbol("values"),
+            {
+                "mathjs": "ObjectNode",
+                "properties": {
+                    "notation": {"mathjs": "ConstantNode", "value": "auto"},
+                    "precision": {"mathjs": "ConstantNode", "value": 2},
+                },
+            },
+        ),
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["values"],
+        target="res",
+    )
+
+    assert evaluator({"values": [1.234, 5.678]}) == "[1.2, 5.7]"
+
+
+def test_logb_alias_uses_log_base_argument():
+    evaluator = build_evaluator(
+        expressions={"res": func("logb", const(8), const(2))},
+        inputs=[],
+        target="res",
+    )
+
+    assert evaluator({}) == 3
+
+
+def test_constant_folding_removes_literal_helper_calls_from_source():
+    evaluator = build_evaluator(
+        expressions={"res": func("log", const(2))},
+        inputs=[],
+        target="res",
+        include_source=True,
+    )
+
+    assert evaluator({}) == pytest.approx(math.log(2))
+    assert "__mj_log(" not in evaluator.__mathjs_source__
+
+
+def test_common_subexpressions_are_hoisted_in_generated_source():
+    repeated = func("sin", symbol("x"))
+    evaluator = build_evaluator(
+        expressions={"res": op("add", repeated, repeated)},
+        inputs=["x"],
+        target="res",
+        include_source=True,
+    )
+
+    assert evaluator({"x": 1}) == pytest.approx(2 * math.sin(1))
+    assert "__mj_cse_0 = __mj_sin(x)" in evaluator.__mathjs_source__
+    assert "res = __mj_cse_0 + __mj_cse_0" in evaluator.__mathjs_source__
+
+
+def test_compile_cache_maxsize_evicts_old_entries():
+    first = build_evaluator(
+        expressions={"res": op("add", symbol("x"), const(1))},
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=1,
+    )
+    second = build_evaluator(
+        expressions={"res": op("add", symbol("x"), const(2))},
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=1,
+    )
+    first_again = build_evaluator(
+        expressions={"res": op("add", symbol("x"), const(1))},
+        inputs=["x"],
+        target="res",
+        compile_cache=True,
+        compile_cache_maxsize=1,
+    )
+
+    assert first({"x": 1}) == 2
+    assert second({"x": 1}) == 3
+    assert first.__code__ is not first_again.__code__
+
+
+def test_compile_cache_structural_key_handles_nan_literals():
+    expressions = {
+        "res": {
+            "type": "ConstantNode",
+            "value": float("nan"),
+            "valueType": "number",
+        },
+    }
+    first = build_evaluator(
+        expressions=expressions,
+        inputs=[],
+        target="res",
+        compile_cache=True,
+    )
+    second = build_evaluator(
+        expressions=expressions,
+        inputs=[],
+        target="res",
+        compile_cache=True,
+    )
+
+    assert first.__code__ is second.__code__
+    assert math.isnan(second({}))
+
+
+def test_comparison_modes_cover_mathjs_numpy_and_strict_semantics():
+    expressions = {"res": op("equal", symbol("x"), symbol("y"))}
+    mathjs_eval = build_evaluator(
+        expressions=expressions,
+        inputs=["x", "y"],
+        target="res",
+    )
+    numpy_eval = build_evaluator(
+        expressions=expressions,
+        inputs=["x", "y"],
+        target="res",
+        config={"comparison": "numpy"},
+    )
+    strict_eval = build_evaluator(
+        expressions=expressions,
+        inputs=["x", "y"],
+        target="res",
+        config={"comparison": "strict"},
+    )
+
+    scope = {"x": 0.001, "y": 0.0010000000000015}
+    assert mathjs_eval(scope) is False
+    assert numpy_eval(scope) is True
+    assert strict_eval({"x": 0.1 + 0.2, "y": 0.3}) is False
+
+
+def test_result_dtype_numpy_preserves_numpy_scalars():
+    expressions = {"res": func("sin", symbol("x"))}
+    default_eval = build_evaluator(expressions=expressions, inputs=["x"], target="res")
+    numpy_eval = build_evaluator(
+        expressions=expressions,
+        inputs=["x"],
+        target="res",
+        config={"result_dtype": "numpy"},
+    )
+
+    assert isinstance(default_eval({"x": np.array(1.0)}), float)
+    assert isinstance(numpy_eval({"x": np.array(1.0)}), np.generic)
+
+
+def test_result_dtype_python_demotes_direct_numpy_scalar_result():
+    evaluator = build_evaluator(
+        expressions={"res": symbol("x")},
+        inputs=["x"],
+        target="res",
+        config={"result_dtype": "python"},
+    )
+
+    assert isinstance(evaluator({"x": np.float64(2)}), float)
+
+
+def test_ifnull_treats_none_inside_object_arrays_as_nullish():
+    evaluator = build_evaluator(
+        expressions={"res": func("ifnull", symbol("x"), const(9))},
+        inputs=["x"],
+        target="res",
+    )
+
+    np.testing.assert_array_equal(
+        evaluator({"x": np.array([None, 2], dtype=object)}),
+        np.array([9, 2], dtype=object),
+    )
+
+
+def test_introspection_helpers_render_strings_and_graphs():
+    payload = {
+        "expressions": {
+            "sum_xy": op("add", symbol("x"), symbol("y")),
+            "res": func("sqrt", symbol("sum_xy")),
+        },
+        "inputs": ["x", "y"],
+        "target": "res",
+    }
+    evaluator = build_evaluator(payload=payload)
+
+    assert to_string(payload) == "sqrt(sum_xy)"
+    assert to_tex(payload) == "\\sqrt{sum_xy}"
+    assert '"sum_xy" -> "res";' in to_dot(payload)
+    assert "sum_xy[sum_xy] --> res[res]" in to_mermaid(payload)
+    assert inputs_referenced_per_target(payload) == {"res": ("x", "y")}
+    assert evaluator.__mathjs_inputs_referenced_per_target__ == {"res": ("x", "y")}

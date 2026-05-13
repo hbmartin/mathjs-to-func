@@ -56,7 +56,7 @@ class ConstantNode(_MathjsBaseModel):
         serialization_alias="type",
     )
     value: bool | int | float | str | None
-    valueType: Literal["number", "boolean", "null"] | None = None
+    valueType: Literal["number", "boolean", "null", "string"] | None = None
 
 
 class SymbolNode(_MathjsBaseModel):

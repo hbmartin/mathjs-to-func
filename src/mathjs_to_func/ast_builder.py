@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import ast
 import math
+import operator
 import re
+from collections import Counter
 from collections.abc import Iterable as AbcIterable
 from collections.abc import Mapping
 from collections.abc import Mapping as AbcMapping
-from typing import Any
+from typing import Any, cast
 
 from .errors import InvalidNodeError
 
@@ -44,7 +46,8 @@ NON_FINITE_LITERALS = {
     "-nan": math.nan,
 }
 
-UNARY_OPERATOR_FUNCTIONS = {"not", "unaryMinus", "unaryPlus"}
+UNARY_OPERATOR_FUNCTIONS = {"not", "percentage", "unaryMinus", "unaryPlus"}
+EAGER_UNARY_OPERATOR_FUNCTIONS = {"not", "percentage", "unaryMinus", "unaryPlus"}
 BINARY_OPERATOR_FUNCTIONS = {
     "add",
     "subtract",
@@ -63,6 +66,15 @@ BINARY_OPERATOR_FUNCTIONS = {
     "unequal",
     "xor",
 }
+EAGER_BINARY_OPERATOR_FUNCTIONS = BINARY_OPERATOR_FUNCTIONS - {"and", "or", "nullish"}
+ARITHMETIC_BINARY_OPERATOR_FUNCTIONS = {
+    "add",
+    "subtract",
+    "multiply",
+    "divide",
+    "pow",
+    "mod",
+}
 MIN_ARITY_FUNCTIONS = {
     "gcd",
     "hypot",
@@ -79,6 +91,7 @@ MIN_ARITY_FUNCTIONS = {
     "permutations",
     "round",
     "variance",
+    "format",
 }
 EXACT_ARITY_FUNCTIONS = {
     "abs": 1,
@@ -99,6 +112,7 @@ EXACT_ARITY_FUNCTIONS = {
     "factorial": 1,
     "floor": 1,
     "ifnull": 2,
+    "logb": 2,
     "log2": 1,
     "log10": 1,
     "sign": 1,
@@ -109,7 +123,9 @@ EXACT_ARITY_FUNCTIONS = {
     "tanh": 1,
 }
 MAX_ARITY_FUNCTIONS = {
+    "format": 2,
     "log": 2,
+    "logb": 2,
     "log1p": 2,
     "permutations": 2,
     "round": 2,
@@ -218,6 +234,44 @@ def _to_number(value: Any, *, expression: str | None) -> float | int:
     )
 
 
+def _looks_numeric_literal(value: str) -> bool:
+    stripped = value.strip().lower()
+    if stripped in NON_FINITE_LITERALS:
+        return True
+    try:
+        float(stripped)
+    except ValueError:
+        return False
+    return True
+
+
+def _extract_node_type_or_none(node: Mapping[str, Any]) -> str | None:
+    node_type = node.get("type") or node.get("mathjs")
+    return node_type if isinstance(node_type, str) else None
+
+
+def _node_key(value: Any) -> tuple[Any, ...] | Any:
+    if isinstance(value, AbcMapping):
+        return (
+            "mapping",
+            tuple(sorted((key, _node_key(item)) for key, item in value.items())),
+        )
+    if isinstance(value, (list, tuple)):
+        return ("sequence", tuple(_node_key(item) for item in value))
+    return value
+
+
+def _literal_ast(value: object) -> ast.expr:
+    if isinstance(value, list):
+        return ast.List(elts=[_literal_ast(item) for item in value], ctx=ast.Load())
+    if isinstance(value, dict):
+        return ast.Dict(
+            keys=[ast.Constant(value=key) for key in value],
+            values=[_literal_ast(item) for item in value.values()],
+        )
+    return ast.Constant(value=value)
+
+
 class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
     """Translate math.js AST nodes into Python AST expressions."""
 
@@ -231,9 +285,498 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         super().__init__(expression_name=expression_name)
         self.helper_names = helper_names
         self.local_names = local_names or set()
+        self._cse_counts: Counter[tuple[Any, ...]] = Counter()
+        self._cse_names: dict[tuple[Any, ...], str] = {}
+        self._cse_bindings: list[tuple[str, ast.expr]] = []
+        self._active_cse_keys: set[tuple[Any, ...]] = set()
+        self._root_key: tuple[Any, ...] | None = None
 
     def build(self, node: Mapping[str, Any]) -> ast.expr:
-        return self.visit(node)
+        return self.build_with_bindings(node)[1]
+
+    def build_with_bindings(
+        self,
+        node: Mapping[str, Any],
+    ) -> tuple[list[ast.stmt], ast.expr]:
+        """Build an expression plus common-subexpression assignments."""
+        self._cse_counts = Counter()
+        self._cse_names = {}
+        self._cse_bindings = []
+        self._active_cse_keys = set()
+        self._root_key = self._cse_key(node)
+        self._collect_cse_candidates(node)
+        expression = self.visit(node)
+        assignments = [
+            ast.Assign(
+                targets=[ast.Name(id=name, ctx=ast.Store())],
+                value=value,
+            )
+            for name, value in self._cse_bindings
+        ]
+        return assignments, expression
+
+    def visit(self, node: Mapping[str, Any]) -> ast.expr:
+        folded = self._constant_fold(node)
+        if folded is not None:
+            return folded
+
+        cse_name = self._maybe_cse_name(node)
+        if cse_name is not None:
+            return ast.Name(id=cse_name, ctx=ast.Load())
+
+        return super().visit(node)
+
+    def _constant_fold(self, node: Mapping[str, Any]) -> ast.expr | None:
+        is_constant, value = self._constant_value(node)
+        if not is_constant:
+            return None
+        return _literal_ast(value)
+
+    def _constant_value(  # noqa: C901, PLR0912
+        self,
+        node: Mapping[str, Any],
+    ) -> tuple[bool, object]:
+        node_type = _extract_node_type_or_none(node)
+        try:
+            if node_type == "ConstantNode":
+                return True, self._constant_node_value(node)
+            if node_type == "SymbolNode":
+                name = node.get("name")
+                if isinstance(name, str):
+                    safe_name = ensure_identifier(name, expression=self.expression_name)
+                    if (
+                        safe_name not in self.local_names
+                        and safe_name in MATHJS_BUILTIN_SYMBOLS
+                    ):
+                        return True, MATHJS_BUILTIN_SYMBOLS[safe_name]
+                return False, None
+            if node_type == "ParenthesisNode":
+                content = node.get("content") or node.get("expr")
+                child = self._ensure_mapping(
+                    content,
+                    node=node,
+                    message="ParenthesisNode missing child content",
+                )
+                return self._constant_value(child)
+            if node_type == "ArrayNode":
+                items = self._ensure_iterable(
+                    node.get("items"),
+                    node=node,
+                    message="ArrayNode items must be iterable",
+                )
+                values: list[object] = []
+                for item in items:
+                    child = self._ensure_mapping(
+                        item,
+                        node=node,
+                        message="ArrayNode element must be object",
+                    )
+                    is_constant, value = self._constant_value(child)
+                    if not is_constant:
+                        return False, None
+                    values.append(value)
+                return True, values
+            if node_type == "ObjectNode":
+                properties = node.get("properties")
+                if not isinstance(properties, AbcMapping):
+                    raise InvalidNodeError(
+                        "ObjectNode properties must be mapping",
+                        expression=self.expression_name,
+                        node=node,
+                    )
+                values: dict[str, object] = {}
+                for key, item in properties.items():
+                    if not isinstance(key, str):
+                        raise InvalidNodeError(
+                            "ObjectNode property keys must be strings",
+                            expression=self.expression_name,
+                            node=node,
+                        )
+                    child = self._ensure_mapping(
+                        item,
+                        node=node,
+                        message="ObjectNode property value must be object",
+                    )
+                    is_constant, value = self._constant_value(child)
+                    if not is_constant:
+                        return False, None
+                    values[key] = value
+                return True, values
+            if node_type == "OperatorNode":
+                return self._constant_operator_value(node)
+            if node_type == "FunctionNode":
+                return self._constant_function_value(node)
+        except (ArithmeticError, TypeError, ValueError, OverflowError):
+            return False, None
+        return False, None
+
+    def _constant_node_value(self, node: Mapping[str, Any]) -> object:
+        value_type = node.get("valueType")
+        value = node.get("value")
+        if value_type in {None, "number"}:
+            if (
+                value_type is None
+                and isinstance(value, str)
+                and not _looks_numeric_literal(value)
+            ):
+                return value
+            return _to_number(value, expression=self.expression_name)
+        if value_type == "string":
+            return "" if value is None else str(value)
+        if value_type == "boolean":
+            return value.lower() == "true" if isinstance(value, str) else bool(value)
+        if value_type == "null":
+            return None
+        raise InvalidNodeError(
+            f"Unsupported constant value type: {value_type!r}",
+            expression=self.expression_name,
+            node=node,
+        )
+
+    def _constant_operator_value(self, node: Mapping[str, Any]) -> tuple[bool, object]:
+        args_list = self._ensure_iterable(
+            node.get("args"),
+            node=node,
+            message="OperatorNode missing args",
+        )
+        fn = node.get("fn")
+        if len(args_list) == 1:
+            child = self._ensure_mapping(
+                args_list[0],
+                node=node,
+                message="OperatorNode child must be object",
+            )
+            is_constant, value = self._constant_value(child)
+            if not is_constant:
+                return False, None
+            return True, self._evaluate_unary_operator(fn, value)
+        if len(args_list) == 2:
+            left_node = self._ensure_mapping(
+                args_list[0],
+                node=node,
+                message="OperatorNode children must be objects",
+            )
+            right_node = self._ensure_mapping(
+                args_list[1],
+                node=node,
+                message="OperatorNode children must be objects",
+            )
+            left_constant, left = self._constant_value(left_node)
+            right_constant, right = self._constant_value(right_node)
+            if not left_constant or not right_constant:
+                return False, None
+            if self._is_percentage_node(right_node) and fn in {"add", "subtract"}:
+                delta = operator.mul(left, right)
+                result = (
+                    operator.add(left, delta)
+                    if fn == "add"
+                    else operator.sub(left, delta)
+                )
+                return True, result
+            if fn not in ARITHMETIC_BINARY_OPERATOR_FUNCTIONS:
+                return False, None
+            return True, self._evaluate_binary_operator(fn, left, right)
+        return False, None
+
+    def _constant_function_value(self, node: Mapping[str, Any]) -> tuple[bool, object]:
+        normalized = self._function_name(node)
+        arg_nodes = self._function_arg_nodes(node)
+        if normalized not in {
+            "abs",
+            "add",
+            "ceil",
+            "cos",
+            "divide",
+            "exp",
+            "floor",
+            "format",
+            "log",
+            "logb",
+            "log1p",
+            "log2",
+            "log10",
+            "mod",
+            "multiply",
+            "pow",
+            "round",
+            "sin",
+            "sqrt",
+            "subtract",
+            "sum",
+            "tan",
+            "unaryMinus",
+            "unaryPlus",
+        }:
+            return False, None
+        values: list[object] = []
+        for arg in arg_nodes:
+            is_constant, value = self._constant_value(arg)
+            if not is_constant:
+                return False, None
+            values.append(value)
+        self._validate_function_arity(normalized, len(values), node=node)
+        if normalized in UNARY_OPERATOR_FUNCTIONS:
+            return True, self._evaluate_unary_operator(normalized, values[0])
+        if normalized in BINARY_OPERATOR_FUNCTIONS:
+            return True, self._evaluate_binary_operator(
+                normalized,
+                values[0],
+                values[1],
+            )
+        return True, self._evaluate_function(normalized, values)
+
+    def _evaluate_unary_operator(self, fn: object, value: object) -> object:
+        if fn == "not":
+            return not value
+        if fn == "percentage":
+            return operator.truediv(value, 100)
+        if fn == "unaryMinus":
+            return operator.neg(value)
+        if fn == "unaryPlus":
+            return operator.pos(value)
+        raise InvalidNodeError(
+            f"Unsupported unary operator: {fn!r}",
+            expression=self.expression_name,
+            node=None,
+        )
+
+    def _evaluate_binary_operator(
+        self,
+        fn: object,
+        left: object,
+        right: object,
+    ) -> object:
+        operations = {
+            "add": operator.add,
+            "subtract": operator.sub,
+            "multiply": operator.mul,
+            "divide": operator.truediv,
+            "pow": operator.pow,
+            "mod": operator.mod,
+            "larger": operator.gt,
+            "largerEq": operator.ge,
+            "smaller": operator.lt,
+            "smallerEq": operator.le,
+            "equal": operator.eq,
+            "unequal": operator.ne,
+            "xor": operator.xor,
+        }
+        try:
+            return operations[cast("str", fn)](left, right)
+        except KeyError as exc:
+            raise InvalidNodeError(
+                f"Unsupported binary operator: {fn!r}",
+                expression=self.expression_name,
+                node=None,
+            ) from exc
+
+    def _evaluate_function(  # noqa: C901, PLR0912
+        self,
+        normalized: str,
+        values: list[object],
+    ) -> object:
+        match normalized:
+            case "abs":
+                return abs(values[0])
+            case "ceil":
+                return math.ceil(cast("Any", values[0]))
+            case "cos":
+                return math.cos(cast("Any", values[0]))
+            case "exp":
+                return math.exp(cast("Any", values[0]))
+            case "floor":
+                return math.floor(cast("Any", values[0]))
+            case "format":
+                return self._format_constant(*values)
+            case "log" | "logb":
+                if len(values) == 2:
+                    return math.log(cast("Any", values[0]), cast("Any", values[1]))
+                return math.log(cast("Any", values[0]))
+            case "log1p":
+                logged = math.log1p(cast("Any", values[0]))
+                if len(values) == 2:
+                    return logged / math.log(cast("Any", values[1]))
+                return logged
+            case "log2":
+                return math.log2(cast("Any", values[0]))
+            case "log10":
+                return math.log10(cast("Any", values[0]))
+            case "max":
+                return max(cast("Any", values))
+            case "min":
+                return min(cast("Any", values))
+            case "round":
+                decimals = int(cast("Any", values[1])) if len(values) == 2 else 0
+                return round(cast("Any", values[0]), decimals)
+            case "sin":
+                return math.sin(cast("Any", values[0]))
+            case "sqrt":
+                return math.sqrt(cast("Any", values[0]))
+            case "sum":
+                return sum(cast("Any", values))
+            case "tan":
+                return math.tan(cast("Any", values[0]))
+            case _:
+                if normalized in BINARY_OPERATOR_FUNCTIONS:
+                    return self._evaluate_binary_operator(
+                        normalized,
+                        values[0],
+                        values[1],
+                    )
+                raise InvalidNodeError(
+                    f"Unsupported function {normalized!r}",
+                    expression=self.expression_name,
+                    node=None,
+                )
+
+    def _is_percentage_node(self, node: Mapping[str, Any]) -> bool:
+        if _extract_node_type_or_none(node) != "OperatorNode":
+            return False
+        if node.get("isPercentage") is True:
+            return True
+        fn = node.get("fn")
+        op = node.get("op")
+        return fn == "percentage" or op == "%"
+
+    def _format_constant(self, value: object, options: object | None = None) -> str:
+        helper = self.helper_names.get("format")
+        if helper is None:
+            return str(value)
+        # Keep compile-time formatting intentionally simple and aligned with the
+        # runtime helper for scalar literals.
+        from .helpers import _mj_format  # noqa: PLC0415
+
+        return _mj_format(value, options)
+
+    def _cse_key(self, node: Mapping[str, Any]) -> tuple[Any, ...]:
+        return cast("tuple[Any, ...]", _node_key(node))
+
+    def _is_cse_candidate(self, node: Mapping[str, Any]) -> bool:
+        node_type = _extract_node_type_or_none(node)
+        if node_type == "FunctionNode":
+            normalized = self._function_name(node)
+            return normalized in self.helper_names and normalized not in {
+                "ifnull",
+                "nullish",
+            }
+        if node_type == "OperatorNode":
+            fn = node.get("fn")
+            eager_functions = (
+                EAGER_BINARY_OPERATOR_FUNCTIONS | EAGER_UNARY_OPERATOR_FUNCTIONS
+            )
+            return isinstance(fn, str) and fn in eager_functions
+        return False
+
+    def _collect_cse_candidates(  # noqa: C901, PLR0912
+        self,
+        node: Mapping[str, Any],
+        *,
+        eager: bool = True,
+    ) -> None:
+        node_type = _extract_node_type_or_none(node)
+        if eager and self._is_cse_candidate(node):
+            self._cse_counts[self._cse_key(node)] += 1
+        if node_type == "OperatorNode":
+            args = self._ensure_iterable(
+                node.get("args"),
+                node=node,
+                message="OperatorNode missing args",
+            )
+            fn = node.get("fn")
+            for index, child in enumerate(args):
+                child_node = self._ensure_mapping(
+                    child,
+                    node=node,
+                    message="OperatorNode argument must be object",
+                )
+                child_eager = eager and not (
+                    fn in {"and", "or", "nullish"} and index == 1
+                )
+                self._collect_cse_candidates(child_node, eager=child_eager)
+            return
+        if node_type == "FunctionNode":
+            normalized = self._function_name(node)
+            for index, child in enumerate(self._function_arg_nodes(node)):
+                child_eager = eager and not (
+                    normalized in {"and", "or", "nullish", "ifnull"} and index == 1
+                )
+                self._collect_cse_candidates(child, eager=child_eager)
+            return
+        if node_type == "ParenthesisNode":
+            content = node.get("content") or node.get("expr")
+            child = self._ensure_mapping(
+                content,
+                node=node,
+                message="ParenthesisNode missing child content",
+            )
+            self._collect_cse_candidates(child, eager=eager)
+            return
+        if node_type == "ArrayNode":
+            items = self._ensure_iterable(
+                node.get("items"),
+                node=node,
+                message="ArrayNode items must be iterable",
+            )
+            for item in items:
+                child = self._ensure_mapping(
+                    item,
+                    node=node,
+                    message="ArrayNode element must be object",
+                )
+                self._collect_cse_candidates(child, eager=eager)
+            return
+        if node_type == "ObjectNode":
+            properties = node.get("properties")
+            if not isinstance(properties, AbcMapping):
+                raise InvalidNodeError(
+                    "ObjectNode properties must be mapping",
+                    expression=self.expression_name,
+                    node=node,
+                )
+            for item in properties.values():
+                child = self._ensure_mapping(
+                    item,
+                    node=node,
+                    message="ObjectNode property value must be object",
+                )
+                self._collect_cse_candidates(child, eager=eager)
+            return
+        if node_type in {"AccessorNode", "IndexNode", "RangeNode"}:
+            # Access/range evaluation can raise for bounds, so CSE does not
+            # speculate across those helper calls.
+            return
+        if node_type == "ConditionalNode":
+            condition = self._ensure_mapping(
+                node.get("condition"),
+                node=node,
+                message="ConditionalNode missing condition",
+            )
+            self._collect_cse_candidates(condition, eager=eager)
+            return
+        if node_type == "RelationalNode":
+            return
+
+    def _maybe_cse_name(self, node: Mapping[str, Any]) -> str | None:
+        key = self._cse_key(node)
+        if (
+            key == self._root_key
+            or key in self._active_cse_keys
+            or self._cse_counts[key] < 2
+            or not self._is_cse_candidate(node)
+        ):
+            return None
+        existing = self._cse_names.get(key)
+        if existing is not None:
+            return existing
+        name = f"__mj_cse_{len(self._cse_names)}"
+        self._cse_names[key] = name
+        self._active_cse_keys.add(key)
+        try:
+            value = super().visit(node)
+        finally:
+            self._active_cse_keys.remove(key)
+        self._cse_bindings.append((name, value))
+        return name
 
     def _defer(self, expression: ast.expr) -> ast.Lambda:
         return ast.Lambda(
@@ -252,8 +795,16 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         value_type = node.get("valueType")
         value = node.get("value")
         if value_type in {None, "number"}:
+            if (
+                value_type is None
+                and isinstance(value, str)
+                and not _looks_numeric_literal(value)
+            ):
+                return ast.Constant(value=value)
             number = _to_number(value, expression=self.expression_name)
             return ast.Constant(value=number)
+        if value_type == "string":
+            return ast.Constant(value="" if value is None else str(value))
         if value_type == "boolean":
             parsed = value.lower() == "true" if isinstance(value, str) else bool(value)
             return ast.Constant(value=parsed)
@@ -330,6 +881,12 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 args=[self.visit(child)],
                 keywords=[],
             )
+        if fn == "percentage":
+            return ast.BinOp(
+                left=self.visit(child),
+                op=ast.Div(),
+                right=ast.Constant(value=100),
+            )
         if fn not in {"unaryMinus", "unaryPlus"}:
             raise InvalidNodeError(
                 f"Unsupported unary operator: {fn!r}",
@@ -340,7 +897,7 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
         op = ast.USub() if fn == "unaryMinus" else ast.UAdd()
         return ast.UnaryOp(op=op, operand=operand)
 
-    def _visit_binary_operator(
+    def _visit_binary_operator(  # noqa: C901
         self,
         fn: Any,
         left_node: Mapping[str, Any],
@@ -348,6 +905,16 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
     ) -> ast.expr:
         left = self.visit(left_node)
         right = self.visit(right_node)
+        if self._is_percentage_node(right_node) and fn in {"add", "subtract"}:
+            percentage_delta: ast.expr = ast.BinOp(
+                left=left,
+                op=ast.Mult(),
+                right=right,
+            )
+            if fn == "add":
+                return ast.BinOp(left=left, op=ast.Add(), right=percentage_delta)
+            return ast.BinOp(left=left, op=ast.Sub(), right=percentage_delta)
+
         match fn:
             case "add":
                 op = ast.Add()
