@@ -30,6 +30,19 @@ jobs:
   mutmut:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: starts-a
+            label: ast_builder
+            mutant-patterns: "mathjs_to_func.a*"
+          - shard: starts-h
+            label: helpers
+            mutant-patterns: "mathjs_to_func.h*"
+          - shard: remaining
+            label: remaining modules
+            mutant-patterns: "mathjs_to_func.[!ah]*"
 
     env:
       MUTMUT_MAX_CHILDREN: "4"
@@ -39,22 +52,37 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
 
       - name: Install the project
         run: uv sync --locked --all-extras --dev
 
       - name: Run mutation testing
-        run: uv run mutmut run --max-children "${MUTMUT_MAX_CHILDREN}"
+        shell: bash
+        env:
+          MUTMUT_PATTERNS: ${{ matrix.mutant-patterns }}
+        run: |
+          read -r -a mutant_patterns <<< "${MUTMUT_PATTERNS}"
+          uv run mutmut run --max-children "${MUTMUT_MAX_CHILDREN}" "${mutant_patterns[@]}"
 
       - name: Summarize mutation results
+        env:
+          MUTMUT_PATTERNS: ${{ matrix.mutant-patterns }}
+          MUTMUT_RESULTS_FILE: mutmut-results-${{ matrix.shard }}.txt
+          MUTMUT_SHARD_LABEL: ${{ matrix.label }}
         run: |
           set -o pipefail
-          uv run mutmut results --all=true | tee mutmut-results.txt
+          uv run mutmut results --all=true > mutmut-results-all.txt
           uv run python - <<'PY'
+          import fnmatch
           import os
           from collections import Counter
           from pathlib import Path
 
+          patterns = os.environ["MUTMUT_PATTERNS"].split()
+          results_file = Path(os.environ["MUTMUT_RESULTS_FILE"])
+          shard_label = os.environ["MUTMUT_SHARD_LABEL"]
           bad_statuses = {
               "survived",
               "no tests",
@@ -64,7 +92,23 @@ jobs:
               "segfault",
               "check was interrupted by user",
           }
-          lines = Path("mutmut-results.txt").read_text().splitlines()
+          raw_lines = Path("mutmut-results-all.txt").read_text().splitlines()
+          lines = []
+          for line in raw_lines:
+              target, separator, _status = line.rpartition(": ")
+              if separator and any(
+                  fnmatch.fnmatch(target.strip(), pattern) for pattern in patterns
+              ):
+                  lines.append(line)
+
+          if not lines:
+              raise SystemExit(
+                  f"No mutmut results matched shard patterns: {', '.join(patterns)}"
+              )
+
+          results_file.write_text("\n".join(lines) + "\n")
+          print(results_file.read_text(), end="")
+
           counts = Counter()
           bad_results = []
 
@@ -82,7 +126,7 @@ jobs:
 
           summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
           with summary.open("a") as handle:
-              handle.write("### Mutmut results\n\n")
+              handle.write(f"### Mutmut results ({shard_label})\n\n")
               for status, count in sorted(counts.items()):
                   handle.write(f"- {status}: {count}\n")
               handle.write("\n")
@@ -104,8 +148,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mutmut-results
-          path: |
-            mutmut-results.txt
-            mutants/**/*.meta
+          name: mutmut-results-${{ matrix.shard }}
+          path: mutmut-results-${{ matrix.shard }}.txt
           if-no-files-found: ignore

@@ -39,3 +39,6 @@ Icon
 .idea/tasks.xml
 .idea/modules.xml
 .idea/*.iml
+
+triage_decisions.db
+reviews_triage/
