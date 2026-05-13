@@ -133,7 +133,7 @@ assert namespace["_compiled"]({"x": 10}) == evaluator({"x": 10})
 
 | Node                     | Notes |
 |-------------------------|-------|
-| `ConstantNode`          | numeric (`number`), boolean, or `null` literals |
+| `ConstantNode`          | numeric (`number`), string, boolean, or `null` literals |
 | `SymbolNode`            | inputs, expression references, and common built-in constants; identifiers must be alphanumeric/underscore, starting with a letter/underscore |
 | `OperatorNode`          | `add`, `subtract`, `multiply`, `divide`, `pow`, `mod`, unary `unaryPlus`, `unaryMinus`, `not`, `and`, `or`, `xor`, comparisons, and `nullish` |
 | `FunctionNode`          | Common math.js numeric/statistical helpers, including trig, logs, `format`, `clamp`, `hypot`, integer combinatorics, `variance`, `std`, `mode`, `ifnull`, and operator aliases such as `add(a, b)` |
@@ -229,7 +229,7 @@ The default schema covers a complete evaluator payload (`expressions`, `inputs`,
 2. **Dependency graph** – A topological sorter (`graphlib.TopologicalSorter`) runs over expression references to produce a safe evaluation order while catching cycles and missing references upfront.
 3. **Code generation** – The generated function validates the provided scope, binds required inputs to local variables, evaluates expressions in order, and returns the target. Intermediate values are stored as local variables named after their expression id.
 4. **Execution sandbox** – The compiled module is executed with a tightly scoped globals dictionary: helper math functions and a few safe built-ins only. There is no ambient `__builtins__` exposure.
-5. **Helper functions** – math.js functions map onto small Python helpers for arithmetic, comparison, logical, nullish, formatting, and statistics behavior. Equality and ordering default to math.js-style tolerances for numeric round-off, configurable per evaluator with `EvalConfig`, `{"epsilon": ...}`, or `{"comparison": "numpy"}` when NumPy `isclose` semantics are desired.
+5. **Helper functions** – math.js functions map onto small Python helpers for arithmetic, comparison, logical, nullish, formatting, and statistics behavior. Equality and ordering default to math.js-style tolerances for numeric round-off, configurable per evaluator with `EvalConfig`, `{"epsilon": ...}`, or `{"comparison": "mathjs" | "numpy" | "strict"}` for explicit comparison semantics.
 
 ### Introspection
 

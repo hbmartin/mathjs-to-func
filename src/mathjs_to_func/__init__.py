@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import math
+import threading
 from collections import OrderedDict
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from types import FunctionType
@@ -171,6 +172,7 @@ def _canonical_cache_key(
 
 
 _COMPILE_CACHES: dict[int | None, OrderedDict[Hashable, CompilationResult]] = {}
+_CACHE_LOCK = threading.Lock()
 
 
 def _cached_compile(  # noqa: PLR0913
@@ -182,11 +184,12 @@ def _cached_compile(  # noqa: PLR0913
     config: EvalConfig,
     maxsize: int | None,
 ) -> CompilationResult:
-    cache = _COMPILE_CACHES.setdefault(maxsize, OrderedDict())
-    if canonical_payload in cache:
-        result = cache.pop(canonical_payload)
-        cache[canonical_payload] = result
-        return result
+    with _CACHE_LOCK:
+        cache = _COMPILE_CACHES.setdefault(maxsize, OrderedDict())
+        if canonical_payload in cache:
+            result = cache.pop(canonical_payload)
+            cache[canonical_payload] = result
+            return result
 
     result = compile_to_callable(
         expressions=expressions,
@@ -194,10 +197,17 @@ def _cached_compile(  # noqa: PLR0913
         target=target,
         config=config,
     )
-    cache[canonical_payload] = result
-    if maxsize is not None and maxsize > 0:
-        while len(cache) > maxsize:
-            cache.popitem(last=False)
+
+    with _CACHE_LOCK:
+        cache = _COMPILE_CACHES.setdefault(maxsize, OrderedDict())
+        if canonical_payload in cache:
+            cached = cache.pop(canonical_payload)
+            cache[canonical_payload] = cached
+            return cached
+        cache[canonical_payload] = result
+        if maxsize is not None and maxsize > 0:
+            while len(cache) > maxsize:
+                cache.popitem(last=False)
     return result
 
 
@@ -311,7 +321,11 @@ def build_evaluator(  # noqa: PLR0913
     normalized_config = coerce_eval_config(config)
 
     if compile_cache:
-        if compile_cache_maxsize is not None and compile_cache_maxsize < 1:
+        if compile_cache_maxsize is not None and (
+            isinstance(compile_cache_maxsize, bool)
+            or not isinstance(compile_cache_maxsize, int)
+            or compile_cache_maxsize < 1
+        ):
             raise ValueError("compile_cache_maxsize must be a positive integer or None")
         input_list = normalise_inputs(inputs)
         canonical = _canonical_cache_key(

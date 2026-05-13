@@ -741,9 +741,51 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
                 )
                 self._collect_cse_candidates(child, eager=eager)
             return
-        if node_type in {"AccessorNode", "IndexNode", "RangeNode"}:
-            # Access/range evaluation can raise for bounds, so CSE does not
-            # speculate across those helper calls.
+        if node_type == "AccessorNode":
+            # The accessor helper can raise, but its object/index children are
+            # evaluated eagerly before the helper call.
+            object_node = self._ensure_mapping(
+                node.get("object"),
+                node=node,
+                message="AccessorNode missing object",
+            )
+            index_node = self._ensure_mapping(
+                node.get("index"),
+                node=node,
+                message="AccessorNode missing index",
+            )
+            self._collect_cse_candidates(object_node, eager=eager)
+            self._collect_cse_candidates(index_node, eager=eager)
+            return
+        if node_type == "IndexNode":
+            dimensions = self._ensure_iterable(
+                node.get("dimensions"),
+                node=node,
+                message="IndexNode dimensions must be iterable",
+            )
+            for dimension in dimensions:
+                child = self._ensure_mapping(
+                    dimension,
+                    node=node,
+                    message="IndexNode dimension must be object",
+                )
+                self._collect_cse_candidates(child, eager=eager)
+            return
+        if node_type == "RangeNode":
+            for key, message in (
+                ("start", "RangeNode missing start"),
+                ("end", "RangeNode missing end"),
+            ):
+                child = self._ensure_mapping(node.get(key), node=node, message=message)
+                self._collect_cse_candidates(child, eager=eager)
+            step = node.get("step")
+            if step is not None:
+                child = self._ensure_mapping(
+                    step,
+                    node=node,
+                    message="RangeNode step must be object",
+                )
+                self._collect_cse_candidates(child, eager=eager)
             return
         if node_type == "ConditionalNode":
             condition = self._ensure_mapping(
@@ -754,6 +796,20 @@ class MathJsAstBuilder(MathJsAstVisitor[ast.expr]):
             self._collect_cse_candidates(condition, eager=eager)
             return
         if node_type == "RelationalNode":
+            params = self._ensure_iterable(
+                node.get("params"),
+                node=node,
+                message="RelationalNode params must be iterable",
+            )
+            for index, param in enumerate(params):
+                child = self._ensure_mapping(
+                    param,
+                    node=node,
+                    message="RelationalNode param must be object",
+                )
+                # Later chained terms are scalar-short-circuited by the helper,
+                # so only the first comparison's terms are safe to hoist.
+                self._collect_cse_candidates(child, eager=eager and index < 2)
             return
 
     def _maybe_cse_name(self, node: Mapping[str, Any]) -> str | None:

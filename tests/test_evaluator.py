@@ -98,6 +98,22 @@ def assert_runtime_cause(excinfo, cause_type, message: str):
     assert message in str(cause)
 
 
+def assert_single_cse_temp_reused(source: str) -> str:
+    assignment_lines = [
+        line.strip()
+        for line in source.splitlines()
+        if line.strip().startswith("__mj_cse_")
+    ]
+    assert len(assignment_lines) == 1
+    temp_name, _assignment = assignment_lines[0].split(" = ", 1)
+    assert source.count(temp_name) >= 3
+    assert any(
+        line.strip().startswith("res = ") and temp_name in line
+        for line in source.splitlines()
+    )
+    return temp_name
+
+
 @pytest.mark.parametrize(
     "fn_name,left,right,expected",
     [
@@ -2188,6 +2204,32 @@ def test_percentage_addition_context_form():
     assert evaluator({"base": 100, "rate": 10}) == 110
 
 
+def test_percentage_subtraction_context_form():
+    expressions = {
+        "res": {
+            "type": "OperatorNode",
+            "fn": "subtract",
+            "op": "-",
+            "args": [
+                symbol("base"),
+                {
+                    "type": "OperatorNode",
+                    "fn": "percentage",
+                    "op": "%",
+                    "args": [symbol("rate")],
+                },
+            ],
+        },
+    }
+    evaluator = build_evaluator(
+        expressions=expressions,
+        inputs=["base", "rate"],
+        target="res",
+    )
+
+    assert evaluator({"base": 100, "rate": 10}) == 90
+
+
 def test_format_function_with_options_object():
     expressions = {
         "res": func(
@@ -2224,6 +2266,20 @@ def test_format_function_supports_native_mathjs_string_constants():
     assert evaluator({"values": [1.234, 5.678]}) == "[1.2, 5.7]"
 
 
+def test_format_function_handles_large_integer_infinity_after_coercion():
+    expressions = {
+        "res": func(
+            "format",
+            symbol("value"),
+            object_node(notation=string_const("exponential"), precision=const(2)),
+        ),
+    }
+    evaluator = build_evaluator(expressions=expressions, inputs=["value"], target="res")
+
+    assert evaluator({"value": 10**309}) == "Infinity"
+    assert evaluator({"value": -(10**309)}) == "-Infinity"
+
+
 def test_logb_alias_uses_log_base_argument():
     evaluator = build_evaluator(
         expressions={"res": func("logb", const(8), const(2))},
@@ -2256,8 +2312,67 @@ def test_common_subexpressions_are_hoisted_in_generated_source():
     )
 
     assert evaluator({"x": 1}) == pytest.approx(2 * math.sin(1))
-    assert "__mj_cse_0 = __mj_sin(x)" in evaluator.__mathjs_source__
-    assert "res = __mj_cse_0 + __mj_cse_0" in evaluator.__mathjs_source__
+    temp_name = assert_single_cse_temp_reused(evaluator.__mathjs_source__)
+    assert "__mj_sin" in evaluator.__mathjs_source__
+    assert temp_name in evaluator.__mathjs_source__
+
+
+def test_common_subexpressions_are_collected_inside_accessors():
+    repeated = op("add", symbol("x"), symbol("y"))
+    evaluator = build_evaluator(
+        expressions={
+            "res": op(
+                "add",
+                accessor(symbol("data"), repeated),
+                accessor(symbol("other"), repeated),
+            ),
+        },
+        inputs=["data", "other", "x", "y"],
+        target="res",
+        include_source=True,
+    )
+
+    scope = {
+        "data": [10, 20, 30],
+        "other": [100, 200, 300],
+        "x": 1,
+        "y": 1,
+    }
+    assert evaluator(scope) == 220
+    assert_single_cse_temp_reused(evaluator.__mathjs_source__)
+
+
+def test_common_subexpressions_are_collected_inside_ranges():
+    repeated = op("add", symbol("x"), symbol("y"))
+    evaluator = build_evaluator(
+        expressions={
+            "res": array(
+                range_node(repeated, const(4)),
+                range_node(repeated, const(5)),
+            ),
+        },
+        inputs=["x", "y"],
+        target="res",
+        include_source=True,
+    )
+
+    first, second = evaluator({"x": 1, "y": 1})
+    np.testing.assert_array_equal(first, np.array([2, 3, 4]))
+    np.testing.assert_array_equal(second, np.array([2, 3, 4, 5]))
+    assert_single_cse_temp_reused(evaluator.__mathjs_source__)
+
+
+def test_common_subexpressions_are_collected_inside_eager_relational_terms():
+    repeated = op("add", symbol("x"), symbol("y"))
+    evaluator = build_evaluator(
+        expressions={"res": relational(["smallerEq"], repeated, repeated)},
+        inputs=["x", "y"],
+        target="res",
+        include_source=True,
+    )
+
+    assert evaluator({"x": 1, "y": 2}) is True
+    assert_single_cse_temp_reused(evaluator.__mathjs_source__)
 
 
 def test_compile_cache_maxsize_evicts_old_entries():
@@ -2286,6 +2401,21 @@ def test_compile_cache_maxsize_evicts_old_entries():
     assert first({"x": 1}) == 2
     assert second({"x": 1}) == 3
     assert first.__code__ is not first_again.__code__
+
+
+@pytest.mark.parametrize("maxsize", [0, -1, 1.5, True])
+def test_compile_cache_maxsize_rejects_non_positive_or_non_integer_values(maxsize):
+    with pytest.raises(
+        ValueError,
+        match="compile_cache_maxsize must be a positive integer or None",
+    ):
+        build_evaluator(
+            expressions={"res": const(1)},
+            inputs=[],
+            target="res",
+            compile_cache=True,
+            compile_cache_maxsize=maxsize,
+        )
 
 
 def test_compile_cache_structural_key_handles_nan_literals():
@@ -2337,6 +2467,18 @@ def test_comparison_modes_cover_mathjs_numpy_and_strict_semantics():
     assert mathjs_eval(scope) is False
     assert numpy_eval(scope) is True
     assert strict_eval({"x": 0.1 + 0.2, "y": 0.3}) is False
+
+
+def test_tolerant_comparison_handles_matching_infinities():
+    evaluator = build_evaluator(
+        expressions={"res": op("equal", symbol("x"), symbol("y"))},
+        inputs=["x", "y"],
+        target="res",
+    )
+
+    assert evaluator({"x": float("inf"), "y": float("inf")}) is True
+    assert evaluator({"x": float("-inf"), "y": float("-inf")}) is True
+    assert evaluator({"x": float("inf"), "y": float("-inf")}) is False
 
 
 def test_result_dtype_numpy_preserves_numpy_scalars():
@@ -2391,6 +2533,51 @@ def test_introspection_helpers_render_strings_and_graphs():
     assert to_string(payload) == "sqrt(sum_xy)"
     assert to_tex(payload) == "\\sqrt{sum_xy}"
     assert '"sum_xy" -> "res";' in to_dot(payload)
-    assert "sum_xy[sum_xy] --> res[res]" in to_mermaid(payload)
+    mermaid = to_mermaid(payload)
+    assert '["sum_xy"]' in mermaid
+    assert '["res"]' in mermaid
+    assert "-->" in mermaid
     assert inputs_referenced_per_target(payload) == {"res": ("x", "y")}
     assert evaluator.__mathjs_inputs_referenced_per_target__ == {"res": ("x", "y")}
+
+
+def test_introspection_rejects_unknown_and_non_string_targets():
+    payload = {
+        "expressions": {"res": const(1)},
+        "inputs": [],
+        "target": "missing",
+    }
+
+    with pytest.raises(ExpressionError, match="Unknown target expression: missing"):
+        to_string(payload)
+    with pytest.raises(ExpressionError, match="Unknown target expression: missing"):
+        inputs_referenced_per_target(payload)
+    with pytest.raises(ExpressionError, match="Target identifiers must be strings"):
+        to_string({"expressions": {"res": const(1)}, "inputs": [], "target": [1]})
+
+
+def test_introspection_validates_child_nodes_before_rendering():
+    with pytest.raises(ExpressionError, match=r"Expected math\.js child node"):
+        to_string({"type": "ArrayNode", "items": ["bad"]})
+    with pytest.raises(ExpressionError, match=r"Expected math\.js child node"):
+        to_string({"type": "FunctionNode", "fn": "sqrt", "args": ["bad"]})
+    with pytest.raises(ExpressionError, match=r"Expected math\.js child node"):
+        to_string(
+            {
+                "type": "AccessorNode",
+                "object": symbol("items"),
+                "index": {"type": "IndexNode", "dimensions": ["bad"]},
+            },
+        )
+
+
+def test_mermaid_output_escapes_special_names():
+    payload = {
+        "expressions": {"a[1]": symbol("x")},
+        "inputs": ["x"],
+        "target": "a[1]",
+    }
+    mermaid = to_mermaid(payload)
+
+    assert '["a[1]"]' in mermaid
+    assert "a[1][a[1]]" not in mermaid

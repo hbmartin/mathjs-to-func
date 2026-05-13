@@ -13,7 +13,7 @@ Primary math.js references:
 
 | Node | Status | Notes |
 |------|--------|-------|
-| `ConstantNode` | Supported | `number`, `boolean`, and `null`. Numeric constants may include `Infinity`, `-Infinity`, and `NaN`. String constants are not supported. |
+| `ConstantNode` | Supported | `number`, `string`, `boolean`, and `null`. Numeric constants may include `Infinity`, `-Infinity`, and `NaN`; string constants are emitted as Python strings. |
 | `SymbolNode` | Supported | Resolves inputs, other expression ids, and common built-in constants. Inputs/expressions override built-ins. |
 | `OperatorNode` | Supported subset | Arithmetic, unary plus/minus, percentage postfix, logical, relational, and `nullish`. See operator table below. |
 | `FunctionNode` | Supported subset | Whitelisted numeric/statistical/nullish helpers plus operator function aliases. Custom functions and raw argument functions are not supported. |
