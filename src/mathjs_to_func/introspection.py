@@ -98,13 +98,18 @@ def _render(  # noqa: C901, PLR0912, PLR0915
         return f"({_render(child, tex=tex)})"
     if node_type == "ArrayNode":
         items = node.get("items") or []
-        return "[" + ", ".join(_render(item, tex=tex) for item in items) + "]"
+        return (
+            "["
+            + ", ".join(_render(_require_mapping(item), tex=tex) for item in items)
+            + "]"
+        )
     if node_type == "ObjectNode":
         properties = node.get("properties") or {}
         return (
             "{"
             + ", ".join(
-                f"{key}: {_render(value, tex=tex)}" for key, value in properties.items()
+                f"{key}: {_render(_require_mapping(value), tex=tex)}"
+                for key, value in properties.items()
             )
             + "}"
         )
@@ -119,7 +124,10 @@ def _render(  # noqa: C901, PLR0912, PLR0915
         obj = _render(_require_mapping(node.get("object")), tex=tex)
         index = _require_mapping(node.get("index"))
         dimensions = index.get("dimensions") or []
-        return f"{obj}[{', '.join(_render(item, tex=tex) for item in dimensions)}]"
+        rendered_dimensions = (
+            _render(_require_mapping(item), tex=tex) for item in dimensions
+        )
+        return f"{obj}[{', '.join(rendered_dimensions)}]"
     if node_type == "ConditionalNode":
         condition = _render(_require_mapping(node.get("condition")), tex=tex)
         true_expr = _render(_require_mapping(node.get("trueExpr")), tex=tex)
@@ -128,7 +136,7 @@ def _render(  # noqa: C901, PLR0912, PLR0915
     if node_type == "RelationalNode":
         conditionals = node.get("conditionals") or []
         params = node.get("params") or []
-        rendered = [_render(item, tex=tex) for item in params]
+        rendered = [_render(_require_mapping(item), tex=tex) for item in params]
         pieces: list[str] = []
         for index, value in enumerate(rendered):
             pieces.append(value)
@@ -139,7 +147,9 @@ def _render(  # noqa: C901, PLR0912, PLR0915
         return " ".join(pieces)
     if node_type == "FunctionNode":
         name = _function_name(node)
-        args = ", ".join(_render(arg, tex=tex) for arg in node.get("args") or [])
+        args = ", ".join(
+            _render(_require_mapping(arg), tex=tex) for arg in node.get("args") or []
+        )
         if tex and name in {"sin", "cos", "tan", "log", "sqrt"}:
             if name == "sqrt":
                 return f"\\sqrt{{{args}}}"
@@ -187,10 +197,27 @@ def _payload_parts(
     if not isinstance(expressions, Mapping):
         raise ExpressionError("Payload missing expressions mapping")
     if isinstance(target, str):
-        return expressions, (target,)
-    if isinstance(target, Sequence) and not isinstance(target, (bytes, bytearray)):
-        return expressions, tuple(str(item) for item in target)
-    raise ExpressionError("Payload missing target")
+        targets = (target,)
+    elif isinstance(target, Sequence) and not isinstance(target, (bytes, bytearray)):
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for item in target:
+            if not isinstance(item, str):
+                raise ExpressionError("Target identifiers must be strings")
+            if item in seen:
+                raise ExpressionError(f"Duplicate target identifier: {item}")
+            seen.add(item)
+            ordered.append(item)
+        if not ordered:
+            raise ExpressionError("At least one target identifier is required")
+        targets = tuple(ordered)
+    else:
+        raise ExpressionError("Payload missing target")
+
+    for item in targets:
+        if item not in expressions:
+            raise ExpressionError(f"Unknown target expression: {item}")
+    return expressions, targets
 
 
 def _render_payload(payload: Mapping[str, Any], *, tex: bool) -> str | dict[str, str]:
@@ -290,10 +317,15 @@ def to_dot(payload: Mapping[str, Any]) -> str:
 def to_mermaid(payload: Mapping[str, Any]) -> str:
     """Render the evaluator dependency graph in Mermaid flowchart syntax."""
     expressions, dependency_map = _dependency_map(payload)
+    names = sorted(
+        set(expressions)
+        | {dep for dependencies in dependency_map.values() for dep in dependencies},
+    )
+    node_ids = {name: f"n{index}" for index, name in enumerate(names)}
     lines = ["graph TD"]
-    lines.extend(f"  {name}[{name}]" for name in sorted(expressions))
+    lines.extend(f"  {node_ids[name]}[{json.dumps(name)}]" for name in names)
     for expr, deps in sorted(dependency_map.items()):
-        lines.extend(f"  {dep}[{dep}] --> {expr}[{expr}]" for dep in sorted(deps))
+        lines.extend(f"  {node_ids[dep]} --> {node_ids[expr]}" for dep in sorted(deps))
     return "\n".join(lines)
 
 

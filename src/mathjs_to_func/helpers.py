@@ -438,13 +438,13 @@ def _format_number(  # noqa: C901, PLR0912
 ) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, float):
-        if math.isnan(value):
-            return "NaN"
-        if math.isinf(value):
-            return "Infinity" if value > 0 else "-Infinity"
 
     if options is None:
+        if isinstance(value, float):
+            if math.isnan(value):
+                return "NaN"
+            if math.isinf(value):
+                return "Infinity" if value > 0 else "-Infinity"
         return str(value)
     if isinstance(options, Mapping):
         notation = str(options.get("notation", "auto"))
@@ -456,9 +456,21 @@ def _format_number(  # noqa: C901, PLR0912
     precision = (
         None if raw_precision is None else _as_integer(raw_precision, name="format")
     )
-    numeric = float(value)
     if precision is None:
+        if isinstance(value, float):
+            if math.isnan(value):
+                return "NaN"
+            if math.isinf(value):
+                return "Infinity" if value > 0 else "-Infinity"
         return str(value)
+    try:
+        numeric = float(value)
+    except OverflowError:
+        numeric = math.inf if cast("Any", value) > 0 else -math.inf
+    if math.isnan(numeric):
+        return "NaN"
+    if math.isinf(numeric):
+        return "Infinity" if numeric > 0 else "-Infinity"
     if precision < 0:
         raise ValueError("format precision must be a non-negative integer")
     if notation == "fixed":
@@ -731,6 +743,12 @@ def _mj_close_with_tolerances(
         right_scalar = _as_python_scalar(right)
         if _is_numeric_scalar(left_scalar) and _is_numeric_scalar(right_scalar):
             try:
+                if left_scalar == right_scalar:
+                    return True
+                if math.isinf(cast("Any", left_scalar)) or math.isinf(
+                    cast("Any", right_scalar),
+                ):
+                    return False
                 difference = abs(cast("Any", left_scalar) - cast("Any", right_scalar))
                 if comparison == "numpy":
                     threshold = abs_tol + rel_tol * abs(cast("Any", right_scalar))
